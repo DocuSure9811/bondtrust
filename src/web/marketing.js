@@ -356,7 +356,7 @@ export function legalValidity(config, user) {
 </div></section>`;
   return page({
     config, user, path: '/validez-legal',
-    title: 'Validez legal de la firma electrónica: eIDAS, ESIGN y Ley 25.506',
+    title: 'Validez legal de la firma electrónica',
     description: 'Qué validez legal tiene la firma electrónica de DocSure en la Unión Europea (eIDAS), Estados Unidos (ESIGN y UETA) y Argentina (Ley 25.506).',
     body,
   });

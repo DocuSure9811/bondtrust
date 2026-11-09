@@ -28,7 +28,7 @@ El token no se guarda en la config de git. Se lee de [.env](.env) y se pasa por 
 ## Stack
 Node 22 (ESM) + Express, tests con `node --test`. Render (servidor), Supabase (Postgres + Storage), Resend (mails), UptimeRobot (ping).
 - **Base provisoria:** Postgres free de Render `docsure-db` (vence 2026-12-09). Migrar a Supabase cambiando `DATABASE_URL` antes de esa fecha.
-- **Tests:** corren en el build de Render (`npm ci && npm test`) contra un esquema temporal en `TEST_DATABASE_URL` (URL externa); si fallan, el deploy no sale.
+- **Tests:** corren en el build de Render (`npm ci && npm test`) contra un esquema temporal en `TEST_DATABASE_URL` (URL **interna**: el build tiene red privada; la base no acepta conexiones externas). Si fallan, el deploy no sale. Ver resultados en los logs de build por API (`GET /v1/logs?type=build`).
 - **Emails:** sin `RESEND_API_KEY` quedan en la bandeja `/admin/correos` (Basic auth, contraseña `ADMIN_TOKEN`).
 - **Estructura:** `src/services/envelopes.js` (lógica), `src/pdf/` (PDF final, sello y verificación), `src/web/` (vistas), `public/` (CSS y JS del navegador; pdf.js servido desde `node_modules`). Sello con certificado X.509 autofirmado; librerías MIT/Apache (pdf-lib, signpdf) verificando licencia y mantenimiento. No copiar código de Documenso/OpenSign (AGPL).
 
