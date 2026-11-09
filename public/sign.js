@@ -149,7 +149,19 @@ function placeFields() {
     el.style.cssText = `left:${f.x * 100}%;top:${f.y * 100}%;width:${f.w * 100}%;height:${f.h * 100}%`;
     wrap.appendChild(el);
   }
+  fitFonts();
+  window.addEventListener('resize', fitFonts);
   update();
+}
+
+/** Ajusta la letra de cada campo a la altura de su casillero. */
+function fitFonts() {
+  document.querySelectorAll('.sbox').forEach((el) => {
+    const px = `${Math.max(8, Math.min(15, el.clientHeight * 0.62))}px`;
+    el.style.fontSize = px;
+    const input = el.querySelector('input[type="text"]');
+    if (input) input.style.fontSize = px;
+  });
 }
 
 function update() {
@@ -158,6 +170,7 @@ function update() {
     if (!el) continue;
     const done = fieldDone(f);
     el.classList.toggle('filled', done);
+    if (done) el.classList.remove('missing');
     if (f.type === 'signature' || f.type === 'initials') {
       const img = f.type === 'signature' ? signature : initials;
       el.innerHTML = img ? `<img alt="${f.type === 'signature' ? 'Tu firma' : 'Tus iniciales'}" src="${img}">` : (f.type === 'signature' ? 'Firmar aquí' : 'Iniciales');
@@ -167,6 +180,8 @@ function update() {
   const done = data.fields.filter((f) => !['date', 'name', 'email'].includes(f.type) && fieldDone(f)).length;
   const p = document.getElementById('progress');
   if (p) p.textContent = `${done} de ${total} campos completos`;
+  const barErr = document.getElementById('bar-err');
+  if (barErr && done === total && /campos/.test(barErr.textContent)) barErr.textContent = '';
 }
 
 function renderBar() {

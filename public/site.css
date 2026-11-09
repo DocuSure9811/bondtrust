@@ -320,7 +320,7 @@ input[type="checkbox"] { display: inline-block; width: 18px; height: 18px; margi
 .props { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 4px; }
 .props-title { font-weight: 700; font-size: .85rem; margin-bottom: 8px; }
 .pages { display: grid; gap: 18px; justify-items: center; }
-.page-wrap { position: relative; background: #fff; box-shadow: var(--shadow); line-height: 0; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+.page-wrap { margin-top: 22px; position: relative; background: #fff; box-shadow: var(--shadow); line-height: 0; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
 .page-wrap canvas { display: block; width: 100%; height: auto; }
 .page-label { position: absolute; top: -22px; left: 0; font-size: .75rem; color: var(--muted); line-height: 1; }
 .fbox { position: absolute; border: 2px solid var(--c, var(--brand)); background: color-mix(in srgb, var(--c, var(--brand)) 14%, transparent); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1.1; font-weight: 700; color: var(--c, var(--brand)); cursor: move; overflow: hidden; touch-action: none; }

@@ -20,6 +20,11 @@ async function addEvent(db, envelopeId, type, { recipientId = null, ip = null, u
   );
 }
 
+/** Fecha corta dd/mm/aaaa (UTC), la misma que se estampa en el PDF. */
+function shortDate(d) {
+  return new Date(d).toISOString().slice(0, 10).split('-').reverse().join('/');
+}
+
 function formatDate(d) {
   return new Date(d).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
@@ -396,7 +401,7 @@ export async function signingFields(ctx, token, session) {
     'SELECT id, type, page, x, y, w, h, required, label FROM fields WHERE recipient_id = $1 ORDER BY page, y, x',
     [r.id],
   );
-  return { fields: rows, name: r.name, email: r.email, today: formatDate(new Date()) };
+  return { fields: rows, name: r.name, email: r.email, today: shortDate(new Date()) };
 }
 
 export async function signDocument(ctx, token, body, meta) {
@@ -409,7 +414,7 @@ export async function signDocument(ctx, token, body, meta) {
     const signature = needs('signature') ? cleanPngDataUrl(body.signature, 'La firma') : null;
     const initials = needs('initials') ? cleanPngDataUrl(body.initials, 'Las iniciales') : null;
     const values = body.values && typeof body.values === 'object' ? body.values : {};
-    const signedOn = new Date().toISOString().slice(0, 10).split('-').reverse().join('/');
+    const signedOn = shortDate(new Date());
 
     for (const f of fields) {
       let value = null;
