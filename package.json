@@ -1,0 +1,15 @@
+{
+  "name": "bondtrust",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bond Trust - servicio de firma electrónica de contratos",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
