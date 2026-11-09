@@ -20,6 +20,11 @@ Servicio propio de firma electrónica de contratos (alternativa a DocuSign). Pro
 - Sin código muerto, sin TODOs sueltos, sin funcionalidades no pedidas. Cada etapa terminada, probada y documentada.
 - Tests obligatorios: verificación por código, un solo uso de links, idempotencia, integridad del sello.
 
+## Cómo hacer push
+El token no se guarda en la config de git. Se lee de [.env](.env) y se pasa por header:
+`AUTH=$(printf "x-access-token:%s" "$GITHUB_TOKEN" | base64 -w0); git -c http.extraheader="Authorization: Basic $AUTH" push origin main`
+(cargar antes `.env` con `set -a; . ./.env; set +a`). Repo: https://github.com/DocuSure9811/bondtrust
+
 ## Stack
 Node 22 (ESM) + Express, tests con `node --test`. Render (servidor), Supabase (Postgres + Storage), Resend (mails), UptimeRobot (ping). Sello con certificado X.509 autofirmado; librerías MIT/Apache (pdf-lib, signpdf) verificando licencia y mantenimiento. No copiar código de Documenso/OpenSign (AGPL).
 
