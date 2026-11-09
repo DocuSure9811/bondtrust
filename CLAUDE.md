@@ -1,6 +1,6 @@
-# Bond Trust — reglas del proyecto
+# DocSure — reglas del proyecto
 
-Servicio propio de firma electrónica de contratos (alternativa a DocuSign). Producto del usuario, separado de cualquier cliente. Responder en español, directo y simple.
+**DocSure** (dominio final `docsure.app`; antes "Bond Trust"): plataforma propia de firma electrónica que debe igualar y superar a DocuSign en funcionalidades, web, SEO y planes (más por menos). Producto del usuario, separado de cualquier cliente. Responder en español, directo y simple. Capturas de referencia de DocuSign en `referencias/docusign/` (gitignored). DocuSeal también es AGPL: solo estudiar funcionalidades.
 
 ## Secretos y credenciales
 - Todas las claves reales viven en [.env](.env) (ignorado por git). Plantilla sin valores: [.env.example](.env.example).
@@ -26,7 +26,11 @@ El token no se guarda en la config de git. Se lee de [.env](.env) y se pasa por 
 (cargar antes `.env` con `set -a; . ./.env; set +a`). Repo: https://github.com/DocuSure9811/bondtrust
 
 ## Stack
-Node 22 (ESM) + Express, tests con `node --test`. Render (servidor), Supabase (Postgres + Storage), Resend (mails), UptimeRobot (ping). Sello con certificado X.509 autofirmado; librerías MIT/Apache (pdf-lib, signpdf) verificando licencia y mantenimiento. No copiar código de Documenso/OpenSign (AGPL).
+Node 22 (ESM) + Express, tests con `node --test`. Render (servidor), Supabase (Postgres + Storage), Resend (mails), UptimeRobot (ping).
+- **Base provisoria:** Postgres free de Render `docsure-db` (vence 2026-12-09). Migrar a Supabase cambiando `DATABASE_URL` antes de esa fecha.
+- **Tests:** corren en el build de Render (`npm ci && npm test`) contra un esquema temporal en `TEST_DATABASE_URL` (URL externa); si fallan, el deploy no sale.
+- **Emails:** sin `RESEND_API_KEY` quedan en la bandeja `/admin/correos` (Basic auth, contraseña `ADMIN_TOKEN`).
+- **Estructura:** `src/services/envelopes.js` (lógica), `src/pdf/` (PDF final, sello y verificación), `src/web/` (vistas), `public/` (CSS y JS del navegador; pdf.js servido desde `node_modules`). Sello con certificado X.509 autofirmado; librerías MIT/Apache (pdf-lib, signpdf) verificando licencia y mantenimiento. No copiar código de Documenso/OpenSign (AGPL).
 
 ## Seguridad
 Links firmados y de un solo uso con vencimiento, validar y sanear toda entrada, no loguear datos personales, verificar HMAC de todo webhook, idempotencia (un sobre = un envío).

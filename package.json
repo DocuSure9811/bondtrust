@@ -1,15 +1,23 @@
 {
-  "name": "bondtrust",
-  "version": "0.1.0",
+  "name": "docsure",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Bond Trust - servicio de firma electrónica de contratos",
+  "description": "DocSure - plataforma de firma electrónica con sello digital",
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test"
+    "test": "node --test --test-concurrency=1"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "@signpdf/placeholder-pdf-lib": "4.0.0",
+    "@signpdf/signer-p12": "4.0.0",
+    "@signpdf/signpdf": "4.0.0",
+    "compression": "1.8.1",
+    "express": "4.21.2",
+    "node-forge": "1.4.2",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "4.10.38",
+    "pg": "8.16.3"
   }
 }
