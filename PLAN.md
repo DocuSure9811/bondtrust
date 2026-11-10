@@ -12,7 +12,7 @@ Cada etapa: implementación + tests en el build + QA en producción (Chromium, F
 | 6 | Adjuntos del firmante | Campo "adjunto": el firmante sube imagen/PDF; se anexa al PDF final y queda en el registro | Hecho |
 | 7 | Carpetas, búsqueda y exportación | Carpetas por usuario, búsqueda por título/firmante/fecha, exportar CSV | Hecho |
 | 8 | Equipos y roles | Organización con miembros (admin/miembro), invitación por link, plantillas compartidas, admin ve todos los sobres | Hecho |
-| 9 | Seguridad de la cuenta | Verificación en dos pasos (TOTP), sesiones activas con cierre remoto, registro de actividad, cambio de contraseña | |
-| 10 | SEO | Páginas por industria y más artículos del blog | |
+| 9 | Seguridad de la cuenta | Verificación en dos pasos (TOTP), sesiones activas con cierre remoto, registro de actividad, cambio de contraseña | Hecho |
+| 10 | SEO | Páginas por industria y más artículos del blog | Hecho |
 
 Fuera de este plan (necesitan cuentas externas): mails reales (dominio propio), pagos, SMS/WhatsApp, Supabase, DNS de docsure.app.
