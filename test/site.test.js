@@ -26,6 +26,8 @@ test('páginas públicas con SEO completo', async () => {
     assert.ok(desc && desc[1].length >= 50 && desc[1].length <= 170, `${path}: description de 50 a 170 caracteres (${desc?.[1].length})`);
     assert.match(html, new RegExp(`<link rel="canonical" href="https://docsure.app${path === '/' ? '/' : path}">`), path);
     assert.equal((html.match(/<h1[\s>]/g) || []).length, 1, `${path}: un solo h1`);
+    assert.match(html, /<meta property="og:image" content="https?:\/\/[^"]+\/static\/og\.png">/, `${path}: og:image`);
+    assert.match(html, /<meta name="twitter:card" content="summary_large_image">/, path);
     assert.match(res.headers.get('content-security-policy'), /default-src 'self'/);
   }
   const home = await (await fetch(t.base)).text();
@@ -42,6 +44,12 @@ test('robots, sitemap, favicon y 404', async () => {
   assert.match(sitemap, /<loc>https:\/\/docsure.app\/precios<\/loc>/);
   const fav = await fetch(`${t.base}/static/favicon.svg`);
   assert.equal(fav.status, 200);
+  const og = await fetch(`${t.base}/static/og.png`);
+  assert.equal(og.status, 200);
+  assert.equal(og.headers.get('content-type'), 'image/png');
+  const ogBytes = Buffer.from(await og.arrayBuffer());
+  assert.equal(ogBytes.readUInt32BE(16), 1200);
+  assert.equal(ogBytes.readUInt32BE(20), 630);
   const nf = await fetch(`${t.base}/no-existe`);
   assert.equal(nf.status, 404);
   assert.match(await nf.text(), /noindex/);

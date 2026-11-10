@@ -140,7 +140,12 @@ ${noindex ? '<meta name="robots" content="noindex, nofollow">' : `<link rel="can
 <meta property="og:title" content="${escapeHtml(fullTitle)}">
 <meta property="og:description" content="${escapeHtml(description)}">
 <meta property="og:url" content="${canonical}">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="${config.appUrl}/static/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="DocSure: firma electrónica con sello digital">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${config.appUrl}/static/og.png">
 <meta name="theme-color" content="#0e7c66">
 <link rel="icon" href="/static/favicon.svg?v=${v}" type="image/svg+xml">
 <link rel="stylesheet" href="/static/site.css?v=${v}">
