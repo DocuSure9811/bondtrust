@@ -41,7 +41,7 @@ function appShell(config, user, { title, body, scripts, active = 'docs' }) {
   const shell = `<div class="app">
   <header class="app-header"><div class="wrap-app app-header-row">
     <a class="logo" href="/app" aria-label="DocSure, mis documentos">${LOGO_SVG}<span>DocSure</span></a>
-    <nav class="app-nav" aria-label="Aplicación"><a href="/app"${active === 'docs' ? ' aria-current="page"' : ''}>Documentos</a><a href="/app/nuevo"${active === 'new' ? ' aria-current="page"' : ''}>Nuevo sobre</a><a href="/app/plantillas"${active === 'tpl' ? ' aria-current="page"' : ''}>Plantillas</a><a href="/app/contactos"${active === 'contacts' ? ' aria-current="page"' : ''}>Contactos</a><a href="/app/equipo"${active === 'team' ? ' aria-current="page"' : ''}>Equipo</a><a href="/app/api"${active === 'api' ? ' aria-current="page"' : ''}>API</a><a href="/app/ajustes"${active === 'settings' ? ' aria-current="page"' : ''}>Ajustes</a></nav>
+    <nav class="app-nav" aria-label="Aplicación"><a href="/app"${active === 'docs' ? ' aria-current="page"' : ''}>Documentos</a><a href="/app/nuevo"${active === 'new' ? ' aria-current="page"' : ''}>Nuevo sobre</a><a href="/app/plantillas"${active === 'tpl' ? ' aria-current="page"' : ''}>Plantillas</a><a href="/app/contactos"${active === 'contacts' ? ' aria-current="page"' : ''}>Contactos</a><a href="/app/automatizaciones"${active === 'auto' ? ' aria-current="page"' : ''}>Automatizaciones</a><a href="/app/equipo"${active === 'team' ? ' aria-current="page"' : ''}>Equipo</a><a href="/app/api"${active === 'api' ? ' aria-current="page"' : ''}>API</a><a href="/app/ajustes"${active === 'settings' ? ' aria-current="page"' : ''}>Ajustes</a></nav>
     <div class="app-user"><span class="app-user-name">${escapeHtml(user.name)}</span><button class="btn btn-ghost btn-sm" type="button" id="logout">Salir</button></div>
   </div></header>
   ${body}
@@ -218,6 +218,44 @@ export function templatesPage(config, user) {
   <div id="tpl-list" class="env-list" aria-live="polite"><p class="muted">Cargando…</p></div>
 </div>`,
     scripts: ['/static/templates.js'],
+  });
+}
+
+export function automationsPage(config, user) {
+  return appShell(config, user, {
+    title: 'Automatizaciones',
+    active: 'auto',
+    body: `<div class="wrap-app app-main">
+  <div class="app-title-row"><h1>Automatizaciones</h1><span class="muted small" id="au-count"></span></div>
+  <p class="muted">Reglas que trabajan solas: cuando un sobre se completa, se rechaza o vence, DocSure hace lo que le indiques.</p>
+  <section class="card">
+    <h2>Nueva regla</h2>
+    <form id="au-form" class="rule-builder" novalidate>
+      <div class="rule-step"><span class="rule-word">Cuando un sobre</span>
+        <label class="visually-hidden" for="au-trigger">Disparador</label>
+        <select id="au-trigger"><option value="completed">se completa</option><option value="declined">es rechazado</option><option value="expired">vence sin firmas</option></select></div>
+      <div class="rule-step"><span class="rule-word">y su título contiene</span>
+        <label class="visually-hidden" for="au-title">Texto del título (opcional)</label>
+        <input id="au-title" maxlength="80" placeholder="cualquier título (opcional)" autocomplete="off"></div>
+      <div class="rule-step"><span class="rule-word">entonces</span>
+        <label class="visually-hidden" for="au-action">Acción</label>
+        <select id="au-action"><option value="move_folder">moverlo a la carpeta</option><option value="send_copy">enviar una copia firmada a</option><option value="notify">avisar por email a</option></select>
+        <label class="visually-hidden" for="au-folder">Carpeta</label><select id="au-folder"></select>
+        <label class="visually-hidden" for="au-email">Email</label><input id="au-email" type="email" maxlength="254" placeholder="email@empresa.com" autocomplete="off" hidden></div>
+      <div class="rule-step"><span class="rule-word">Nombre</span>
+        <label class="visually-hidden" for="au-name">Nombre de la regla (opcional)</label>
+        <input id="au-name" maxlength="80" placeholder="opcional" autocomplete="off">
+        <button class="btn btn-primary" type="submit">Crear regla</button></div>
+    </form>
+    <p class="fine" id="au-hint"></p>
+    <p class="form-error" role="alert" id="au-msg"></p>
+  </section>
+  <section class="card">
+    <h2>Tus reglas</h2>
+    <ul class="rlist" id="au-list" aria-live="polite"><li class="muted">Cargando…</li></ul>
+  </section>
+</div>`,
+    scripts: ['/static/automations.js'],
   });
 }
 

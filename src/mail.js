@@ -263,6 +263,31 @@ export const templates = {
       text: `El contrato "${title}" ${when} (${endDate}). Para renovarlo, abrí el sobre y tocá "Nueva versión". Ver: ${url}`,
     };
   },
+  sharedCopy({ senderName, title, url, days }) {
+    return {
+      subject: `Copia firmada: ${title}`,
+      html: layout({
+        title: 'Te enviaron un documento firmado',
+        intro: `<p>${escapeHtml(senderName)} te envía una copia de <strong>${escapeHtml(title)}</strong>, firmado por todas las partes y sellado digitalmente.</p><p>El enlace funciona durante ${days} días.</p>`,
+        buttonText: 'Descargar el PDF firmado',
+        buttonUrl: url,
+      }),
+      text: `${senderName} te envía una copia firmada de "${title}". Descargala (el enlace vence en ${days} días): ${url}`,
+    };
+  },
+  automationNotice({ trigger, title, ruleName, url }) {
+    const what = { completed: 'se completó', declined: 'fue rechazado', expired: 'venció sin todas las firmas' }[trigger];
+    return {
+      subject: `Aviso: ${title} ${what}`,
+      html: layout({
+        title: `Un sobre ${what}`,
+        intro: `<p>El sobre <strong>${escapeHtml(title)}</strong> ${what}.</p><p class="muted">Recibís este aviso por la automatización “${escapeHtml(ruleName)}”.</p>`,
+        buttonText: 'Ver el sobre',
+        buttonUrl: url,
+      }),
+      text: `El sobre "${title}" ${what}. Automatización: ${ruleName}. Ver: ${url}`,
+    };
+  },
 };
 
 export function createMailer({ pool, resendApiKey, mailFrom, forceOutbox = false }) {

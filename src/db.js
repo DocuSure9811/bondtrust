@@ -291,6 +291,33 @@ ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS version int NOT NULL DEFAULT 1;
 CREATE INDEX IF NOT EXISTS envelopes_contract_end_idx ON envelopes (contract_end) WHERE contract_end IS NOT NULL;
 CREATE INDEX IF NOT EXISTS envelopes_root_idx ON envelopes (root_id) WHERE root_id IS NOT NULL;
 
+-- v0.7: automatizaciones (cuando pasa algo con un sobre, hacer otra cosa)
+CREATE TABLE IF NOT EXISTS automations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  trigger text NOT NULL CHECK (trigger IN ('completed', 'declined', 'expired')),
+  title_contains text NOT NULL DEFAULT '',
+  action text NOT NULL CHECK (action IN ('move_folder', 'send_copy', 'notify')),
+  folder_id uuid REFERENCES folders(id) ON DELETE SET NULL,
+  email text,
+  active boolean NOT NULL DEFAULT true,
+  runs int NOT NULL DEFAULT 0,
+  last_run_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS automations_owner_idx ON automations (owner_id, trigger) WHERE active;
+
+-- v0.7: enlaces de descarga del PDF final para terceros (copias enviadas por automatizaciones)
+CREATE TABLE IF NOT EXISTS document_links (
+  id bigserial PRIMARY KEY,
+  envelope_id uuid NOT NULL REFERENCES envelopes(id) ON DELETE CASCADE,
+  token_hash text NOT NULL UNIQUE,
+  email text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- v0.5: contactos
 CREATE TABLE IF NOT EXISTS contacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

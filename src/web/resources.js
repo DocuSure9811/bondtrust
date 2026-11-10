@@ -160,6 +160,15 @@ export const ARTICLES = [
 <li>DocSure te manda un email antes de la fecha y el contrato aparece en <strong>Próximos vencimientos</strong> del panel.</li>
 <li>Para renovarlo o cambiarlo, tocá <strong>Nueva versión</strong>: se crea un borrador con los mismos documentos, firmantes y campos, y las versiones quedan enlazadas en el historial.</li>
 </ol>`],
+  ['automatizaciones', 'organizar', 'Automatizaciones: cuando pasa algo, hacé otra cosa', 'Reglas que trabajan solas sobre tus sobres.', `
+<ol>
+<li>Entrá a <strong>Automatizaciones</strong> en el panel.</li>
+<li>Armá la regla como una frase: <em>Cuando un sobre se completa, es rechazado o vence sin firmas…</em></li>
+<li>Opcional: limitala a sobres cuyo título contenga una palabra, por ejemplo <em>Alquiler</em>.</li>
+<li>Elegí qué hacer: <strong>moverlo a una carpeta</strong>, <strong>enviar una copia firmada</strong> a un email (solo al completarse) o <strong>avisar por email</strong>.</li>
+<li>Tocá <strong>Crear regla</strong>.</li>
+</ol>
+<p>Cada regla muestra cuántas veces se ejecutó; podés pausarla o borrarla cuando quieras. La copia firmada llega con un enlace de descarga que vence en 30 días. También podés crear reglas por API.</p>`],
   ['equipo', 'cuenta', 'Trabajar en equipo', 'Invitá personas, asigná roles y compartí plantillas.', `
 <ol>
 <li>En <strong>Equipo</strong>, creá el equipo con un nombre.</li>
@@ -204,7 +213,7 @@ ${Object.entries(TOPICS).map(([key, name]) => `<div class="help-topic" data-topi
   <h2 class="section-title">¿No encontraste lo que buscabas?</h2>
   <p class="section-lead">Revisá las <a href="/precios#preguntas">preguntas frecuentes</a>, la <a href="/desarrolladores">documentación de la API</a> o el <a href="/blog">blog</a>.</p>
 </div></section>`;
-  return page({ config, user, path: '/ayuda', title: 'Centro de ayuda', description: 'Guías paso a paso de DocSure: enviar documentos, firmar, plantillas, carpetas, vencimientos de contratos, equipo, seguridad y API.', body, scripts: ['/static/help.js'] });
+  return page({ config, user, path: '/ayuda', title: 'Centro de ayuda', description: 'Guías paso a paso de DocSure: enviar documentos, firmar, plantillas, carpetas, contratos, automatizaciones, equipo, seguridad y API.', body, scripts: ['/static/help.js'] });
 }
 
 export function helpArticle(config, user, slug) {

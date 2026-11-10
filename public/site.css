@@ -552,3 +552,13 @@ dialog::backdrop { background: rgba(12, 26, 46, .55); }
 .expiring h2 { font-size: 1rem; margin: 0 0 8px; }
 .expiring li.is-soon small { color: #9a5b00; }
 .expiring li.is-late small { color: var(--danger); }
+
+/* v0.7: automatizaciones */
+.rule-builder { display: grid; gap: 12px; }
+.rule-step { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rule-word { font-weight: 600; color: var(--muted); min-width: 150px; }
+.rule-step select, .rule-step input { font: inherit; padding: .5em .7em; border: 1px solid var(--line); border-radius: 8px; background: #fff; min-width: 200px; }
+.rule small { display: block; }
+.rule.is-paused { opacity: .6; }
+@media (min-width: 900px) { .detail-grid > #contract { grid-column: 2; grid-row: 1 / span 2; } }
+@media (max-width: 560px) { .rule-word { min-width: 0; width: 100%; } .rule-step select, .rule-step input { width: 100%; } }

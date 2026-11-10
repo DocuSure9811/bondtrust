@@ -187,6 +187,10 @@ const ENDPOINTS = [
   ['POST', '/contacts', 'Agrega un contacto: {"name","email"}. Si el email ya existe, actualiza el nombre.'],
   ['PUT', '/contacts/{id}', 'Edita nombre y email de un contacto.'],
   ['DELETE', '/contacts/{id}', 'Elimina un contacto.'],
+  ['GET', '/automations', 'Lista las automatizaciones con cuántas veces se ejecutó cada una.'],
+  ['POST', '/automations', 'Crea una regla: {"trigger": "completed|declined|expired", "action": "move_folder|send_copy|notify", "folder_id" o "email", "title_contains", "name"}. send_copy solo con completed.'],
+  ['PUT', '/automations/{id}', 'Edita la regla, o pausa/reanuda con {"active": false|true}.'],
+  ['DELETE', '/automations/{id}', 'Borra la regla.'],
   ['GET', '/webhooks', 'Lista los webhooks.'],
   ['POST', '/webhooks', 'Crea un webhook. Devuelve su secreto de firma una sola vez.'],
   ['DELETE', '/webhooks/{id}', 'Elimina un webhook.'],
@@ -390,6 +394,18 @@ export function openapiSpec(config) {
             links: { type: 'object' },
           },
         },
+        Automation: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', maxLength: 80 },
+            trigger: { type: 'string', enum: ['completed', 'declined', 'expired'] },
+            title_contains: { type: 'string', maxLength: 80, description: 'Opcional: solo sobres cuyo título contenga este texto.' },
+            action: { type: 'string', enum: ['move_folder', 'send_copy', 'notify'], description: 'send_copy envía un enlace al PDF firmado (vence en 30 días); solo con trigger completed.' },
+            folder_id: { type: 'string', format: 'uuid', description: 'Obligatorio con move_folder.' },
+            email: { type: 'string', format: 'email', description: 'Obligatorio con send_copy y notify.' },
+            active: { type: 'boolean' },
+          },
+        },
         Contact: { type: 'object', required: ['name', 'email'], properties: { name: { type: 'string', maxLength: 120 }, email: { type: 'string', format: 'email' } } },
         Webhook: { type: 'object', required: ['url'], properties: { url: { type: 'string', format: 'uri' }, events: { type: 'array', items: { type: 'string', enum: WEBHOOK_EVENTS } } } },
       },
@@ -445,6 +461,14 @@ export function openapiSpec(config) {
       '/contacts/{id}': {
         put: { summary: 'Editar contacto', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Contact' } } } }, responses: { 200: { description: 'Contacto' }, 404: err, 409: err } },
         delete: { summary: 'Eliminar contacto', security: auth, parameters: [idParam], responses: { 200: { description: 'ok' }, 404: err } },
+      },
+      '/automations': {
+        get: { summary: 'Listar automatizaciones', security: auth, responses: { 200: { description: 'Lista' } } },
+        post: { summary: 'Crear automatización', security: auth, requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Automation' } } } }, responses: { 201: { description: 'Regla' }, 400: err, 409: err } },
+      },
+      '/automations/{id}': {
+        put: { summary: 'Editar, pausar o reanudar una automatización', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Automation' } } } }, responses: { 200: { description: 'Regla' }, 400: err, 404: err } },
+        delete: { summary: 'Borrar automatización', security: auth, parameters: [idParam], responses: { 200: { description: 'ok' }, 404: err } },
       },
       '/webhooks': {
         get: { summary: 'Listar webhooks', security: auth, responses: { 200: { description: 'Lista' } } },

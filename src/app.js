@@ -10,6 +10,7 @@ import { createApiV1 } from './api-v1.js';
 import * as apiKeys from './services/apikeys.js';
 import * as account from './services/account.js';
 import * as attachments from './services/attachments.js';
+import * as automations from './services/automations.js';
 import * as contacts from './services/contacts.js';
 import * as contracts from './services/contracts.js';
 import * as folders from './services/folders.js';
@@ -220,6 +221,7 @@ export function createApp({ pool, config, mailer }) {
   app.get('/app/ajustes', requirePageUser, (req, res) => html(res, views.settingsPage(config, req.user)));
   app.get('/app/contactos', requirePageUser, (req, res) => html(res, views.contactsPage(config, req.user)));
   app.get('/app/equipo', requirePageUser, (req, res) => html(res, views.teamPage(config, req.user)));
+  app.get('/app/automatizaciones', requirePageUser, (req, res) => html(res, views.automationsPage(config, req.user)));
   app.get('/app/unirse', requirePageUser, (req, res) => html(res, views.joinPage(config, req.user)));
 
   // ---------- API del panel: corrección, vencimiento, firma en persona ----------
@@ -272,6 +274,12 @@ export function createApp({ pool, config, mailer }) {
   app.put('/api/sobres/:id/contrato', requireUser, json, asyncRoute(async (req, res) => res.json(await contracts.setContract(ctx, req.user.id, req.params.id, req.body, clientMeta(req)))));
   app.post('/api/sobres/:id/nueva-version', requireUser, asyncRoute(async (req, res) => res.status(201).json(await contracts.newVersion(ctx, req.user.id, req.params.id, clientMeta(req)))));
   app.get('/api/vencimientos', requireUser, asyncRoute(async (req, res) => res.json({ data: await contracts.expiringContracts(ctx, req.user.id, { days: req.query.dias, scope: req.query.alcance === 'equipo' ? 'team' : 'mine' }) })));
+
+  // ---------- API del panel: automatizaciones ----------
+  app.get('/api/automatizaciones', requireUser, asyncRoute(async (req, res) => res.json({ data: await automations.listAutomations(ctx, req.user.id) })));
+  app.post('/api/automatizaciones', requireUser, json, asyncRoute(async (req, res) => res.status(201).json(await automations.createAutomation(ctx, req.user.id, req.body))));
+  app.put('/api/automatizaciones/:id', requireUser, json, asyncRoute(async (req, res) => res.json(await automations.updateAutomation(ctx, req.user.id, req.params.id, req.body))));
+  app.delete('/api/automatizaciones/:id', requireUser, asyncRoute(async (req, res) => res.json(await automations.deleteAutomation(ctx, req.user.id, req.params.id))));
 
   // ---------- API del panel: contactos ----------
   app.get('/api/contactos', requireUser, asyncRoute(async (req, res) => res.json({ data: await contacts.listContacts(ctx, req.user.id, req.query.q) })));

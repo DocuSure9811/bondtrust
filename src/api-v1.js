@@ -2,6 +2,7 @@ import express from 'express';
 import * as account from './services/account.js';
 import * as keys from './services/apikeys.js';
 import * as attachments from './services/attachments.js';
+import * as automations from './services/automations.js';
 import * as contacts from './services/contacts.js';
 import * as contracts from './services/contracts.js';
 import * as folders from './services/folders.js';
@@ -174,6 +175,11 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
   router.post('/contacts', asyncRoute(async (req, res) => res.status(201).json(await contacts.createContact(ctx, req.apiUser.id, req.body || {}))));
   router.put('/contacts/:id', asyncRoute(async (req, res) => res.json(await contacts.updateContact(ctx, req.apiUser.id, req.params.id, req.body || {}))));
   router.delete('/contacts/:id', asyncRoute(async (req, res) => res.json(await contacts.deleteContact(ctx, req.apiUser.id, req.params.id))));
+
+  router.get('/automations', asyncRoute(async (req, res) => res.json({ data: await automations.listAutomations(ctx, req.apiUser.id) })));
+  router.post('/automations', asyncRoute(async (req, res) => res.status(201).json(await automations.createAutomation(ctx, req.apiUser.id, req.body || {}))));
+  router.put('/automations/:id', asyncRoute(async (req, res) => res.json(await automations.updateAutomation(ctx, req.apiUser.id, req.params.id, req.body || {}))));
+  router.delete('/automations/:id', asyncRoute(async (req, res) => res.json(await automations.deleteAutomation(ctx, req.apiUser.id, req.params.id))));
 
   router.get('/webhooks', asyncRoute(async (req, res) => res.json({ data: await hooks.listWebhooks(ctx, req.apiUser.id), events: hooks.WEBHOOK_EVENTS })));
   router.post('/webhooks', asyncRoute(async (req, res) => res.status(201).json(await hooks.createWebhook(ctx, req.apiUser.id, req.body || {}))));

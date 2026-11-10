@@ -6,17 +6,23 @@ import { planOf } from '../plans.js';
 import { hmac, maskEmail, newOtp, randomToken, safeEqualHex, sha256Hex } from '../security.js';
 import { HttpError, cleanEmail, cleanNumber, cleanPngDataUrl, cleanText } from '../validate.js';
 import { listAttachments } from './attachments.js';
+import { runAutomations } from './automations.js';
 import { rememberRecipients } from './contacts.js';
 import { visibleOwnerIds } from './teams.js';
 import { evaluateFormula, formatNumber, parseNumber } from '../../public/formula.js';
 import { VALIDATIONS, cleanFields, fieldsAsInput, insertFields, visibleFields } from './fields.js';
 import { emitEnvelopeEvent } from './webhooks.js';
 
-/** Notifica a los webhooks en segundo plano; nunca bloquea ni rompe el flujo principal. */
+const AUTOMATION_TRIGGERS = { 'envelope.completed': 'completed', 'envelope.declined': 'declined', 'envelope.expired': 'expired' };
+
+/** Notifica a los webhooks y corre las automatizaciones en segundo plano; nunca bloquea ni rompe el flujo principal. */
 function emit(ctx, envelopeId, type, extra) {
   emitEnvelopeEvent(ctx, envelopeId, type, extra)
     .then((deliveries) => Promise.allSettled(deliveries))
     .catch((err) => console.error('Webhook no emitido:', err.message));
+  if (AUTOMATION_TRIGGERS[type]) {
+    runAutomations(ctx, envelopeId, AUTOMATION_TRIGGERS[type]).catch((err) => console.error('Automatizaciones:', err.message));
+  }
 }
 
 const ACCESS_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ23456789';
@@ -723,8 +729,10 @@ export async function completeEnvelope(ctx, envelopeId) {
 export async function downloadByToken(ctx, token) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{20,100}$/.test(token)) throw new HttpError(404, 'Enlace inválido.', 'invalid_link');
   const { rows: [row] } = await ctx.pool.query(
-    `SELECT e.id, e.title, e.final_pdf, e.final_sha256, e.completed_at FROM recipients r JOIN envelopes e ON e.id = r.envelope_id
-      WHERE r.download_token_hash = $1 AND e.status = 'completed'`,
+    `SELECT e.id, e.title, e.final_pdf, e.final_sha256, e.completed_at FROM envelopes e
+      WHERE e.status = 'completed' AND e.id = coalesce(
+        (SELECT r.envelope_id FROM recipients r WHERE r.download_token_hash = $1),
+        (SELECT l.envelope_id FROM document_links l WHERE l.token_hash = $1 AND l.expires_at > now()))`,
     [hmac(ctx.config.tokenSecret, `dl:${token}`)],
   );
   if (!row) throw new HttpError(404, 'El enlace de descarga no es válido.', 'invalid_link');

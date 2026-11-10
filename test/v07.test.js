@@ -122,3 +122,71 @@ test('contratos: versiones enlazadas y el contrato anterior sale de la lista cua
   const spec = await (await fetch(`${t.base}/openapi.json`)).json();
   for (const p of ['/envelopes/{id}/contract', '/envelopes/{id}/versions', '/contracts/expiring']) assert.ok(spec.paths[p], p);
 });
+
+const waitFor = async (fn, what) => {
+  for (let i = 0; i < 60; i += 1) {
+    const v = await fn();
+    if (v) return v;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`no ocurrió: ${what}`);
+};
+
+test('automatizaciones: validación, mover a carpeta, copia firmada con enlace propio, aviso al rechazar y pausa', async () => {
+  const rule = (body) => owner('/api/automatizaciones', { method: 'POST', body });
+  const { id: folderId } = await (await owner('/api/carpetas', { method: 'POST', body: { name: 'Alquileres' } })).json();
+  assert.equal((await rule({ trigger: 'declined', action: 'send_copy', email: 'x@example.com' })).status, 400, 'copia solo al completarse');
+  assert.equal((await rule({ trigger: 'completed', action: 'move_folder' })).status, 400, 'carpeta obligatoria');
+  assert.equal((await rule({ trigger: 'completed', action: 'notify', email: 'no-es-email' })).status, 400, 'email válido');
+  assert.equal((await rule({ trigger: 'nunca', action: 'notify', email: 'x@example.com' })).status, 400, 'disparador válido');
+
+  const move = await (await rule({ trigger: 'completed', title_contains: 'alquiler', action: 'move_folder', folder_id: folderId })).json();
+  const copy = await (await rule({ trigger: 'completed', action: 'send_copy', email: 'copia@example.com', name: 'Copia al estudio' })).json();
+  await rule({ trigger: 'declined', action: 'notify', email: 'aviso@example.com' });
+  assert.equal(move.folder_name, 'Alquileres');
+  assert.equal(copy.name, 'Copia al estudio');
+
+  const a = await completed('auto1@example.com', 'Alquiler depto 3B');
+  await waitFor(async () => (await (await owner(`/api/sobres/${a}`)).json()).envelope.folder_id === folderId, 'mover a carpeta');
+  const copies = await waitFor(async () => { const m = await outbox(t.pool, 'copy', 'copia@example.com'); return m.length === 1 && m; }, 'copia enviada');
+  const token = copies[0].match(/\/documento\/([A-Za-z0-9_-]+)/)[1];
+  const pdf = await fetch(`${t.base}/documento/${token}/pdf`);
+  assert.equal(pdf.status, 200);
+  assert.equal((await pdf.arrayBuffer()).byteLength > 1000, true);
+
+  // Otro título: no se mueve, pero la copia (sin condición) sí sale.
+  const b = await completed('auto2@example.com', 'Contrato de servicios');
+  await waitFor(async () => (await outbox(t.pool, 'copy', 'copia@example.com')).length === 2, 'segunda copia');
+  assert.equal((await (await owner(`/api/sobres/${b}`)).json()).envelope.folder_id, null);
+
+  // Enlace vencido: deja de funcionar.
+  await t.pool.query("UPDATE document_links SET expires_at = now() - interval '1 minute'");
+  assert.equal((await fetch(`${t.base}/documento/${token}/pdf`)).status, 404);
+
+  // Pausada, no se ejecuta.
+  assert.equal((await owner(`/api/automatizaciones/${copy.id}`, { method: 'PUT', body: { active: false } })).status, 200);
+  await completed('auto3@example.com', 'Contrato pausado');
+  await new Promise((r) => setTimeout(r, 800));
+  assert.equal((await outbox(t.pool, 'copy', 'copia@example.com')).length, 2);
+  const list = (await (await owner('/api/automatizaciones')).json()).data;
+  assert.equal(list.find((r) => r.id === copy.id).runs, 2);
+  assert.equal(list.find((r) => r.id === move.id).runs, 1);
+
+  // Rechazo: aviso por email.
+  const { id: d } = await (await owner('/api/sobres?title=Rechazo', { method: 'POST', body: await samplePdf() })).json();
+  await owner(`/api/sobres/${d}`, { method: 'PUT', body: { title: 'Rechazo', recipients: [{ key: 's', name: 'Firma', email: 'rechaza@example.com' }], fields: [F({ type: 'signature' })] } });
+  await owner(`/api/sobres/${d}/enviar`, { method: 'POST', headers: { 'idempotency-key': `r-${d}` } });
+  const signer = client(t.base);
+  const st = linkFrom((await outbox(t.pool, 'invite', 'rechaza@example.com')).at(-1));
+  await signer(`/api/firmar/${st}/codigo`, { method: 'POST' });
+  const { session } = await (await signer(`/api/firmar/${st}/verificar`, { method: 'POST', body: { code: codeFrom((await outbox(t.pool, 'otp', 'rechaza@example.com')).at(-1)) } })).json();
+  assert.equal((await signer(`/api/firmar/${st}/rechazar`, { method: 'POST', headers: { 'x-sign-session': session }, body: { reason: 'No corresponde' } })).status, 200);
+  const notice = await waitFor(async () => (await outbox(t.pool, 'notice', 'aviso@example.com'))[0], 'aviso de rechazo');
+  assert.match(notice, /fue rechazado/);
+
+  // Otra cuenta no toca reglas ajenas.
+  const other = client(t.base);
+  await other('/api/auth/registro', { method: 'POST', body: { name: 'Ajena', email: 'ajena7@example.com', password: 'clave-ajena-larga' } });
+  assert.equal((await other(`/api/automatizaciones/${copy.id}`, { method: 'DELETE' })).status, 404);
+  assert.equal((await owner(`/api/automatizaciones/${copy.id}`, { method: 'DELETE' })).status, 200);
+});
