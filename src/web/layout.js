@@ -12,6 +12,8 @@ const NAV = [
           ['/producto#firma', 'Firma electrónica', 'Enviá y firmá desde cualquier dispositivo'],
           ['/producto#preparacion', 'Preparación de documentos', 'Arrastrá campos sobre tu PDF en segundos'],
           ['/producto#sello', 'Sello digital y auditoría', 'Pruebas criptográficas en cada documento'],
+          ['/producto#plantillas', 'Plantillas y envío masivo', 'Cientos de sobres desde un CSV'],
+          ['/integraciones', 'Integraciones', 'API, webhooks, Zapier, Make y n8n'],
           ['/verificar', 'Verificador público', 'Comprobá si un documento fue alterado'],
           ['/desarrolladores', 'API y conexión con IA', 'Integrá DocSure en minutos'],
         ],
@@ -20,6 +22,9 @@ const NAV = [
         title: 'Recursos',
         items: [
           ['/validez-legal', 'Validez legal', 'eIDAS, ESIGN y Ley 25.506 explicados'],
+          ['/tipos-de-firma', 'Tipos de firma', 'Simple, avanzada, cualificada y digital'],
+          ['/comparar/docusign', 'DocSure vs. DocuSign', 'Más funciones por menos precio'],
+          ['/blog', 'Blog', 'Guías de firma electrónica'],
           ['/seguridad', 'Centro de confianza', 'Cómo protegemos tus documentos'],
           ['/precios#preguntas', 'Preguntas frecuentes', 'Todo sobre planes y sobres'],
         ],
@@ -101,13 +106,13 @@ export function footer() {
     </div>
     <div><p class="footer-title">Producto</p><ul>
       <li><a href="/producto">Funcionalidades</a></li><li><a href="/precios">Precios</a></li>
-      <li><a href="/verificar">Verificar un documento</a></li><li><a href="/desarrolladores">API para desarrolladores</a></li><li><a href="/registro">Crear cuenta gratis</a></li></ul></div>
+      <li><a href="/verificar">Verificar un documento</a></li><li><a href="/desarrolladores">API para desarrolladores</a></li><li><a href="/integraciones">Integraciones</a></li><li><a href="/comparar/docusign">DocSure vs. DocuSign</a></li><li><a href="/registro">Crear cuenta gratis</a></li></ul></div>
     <div><p class="footer-title">Soluciones</p><ul>
       <li><a href="/soluciones#ventas">Ventas</a></li><li><a href="/soluciones#rrhh">Recursos Humanos</a></li>
       <li><a href="/soluciones#legal">Legal</a></li><li><a href="/soluciones#inmobiliario">Inmobiliario</a></li></ul></div>
     <div><p class="footer-title">Confianza</p><ul>
       <li><a href="/seguridad">Centro de confianza</a></li><li><a href="/validez-legal">Validez legal</a></li>
-      <li><a href="/precios#preguntas">Preguntas frecuentes</a></li></ul></div>
+      <li><a href="/precios#preguntas">Preguntas frecuentes</a></li><li><a href="/tipos-de-firma">Tipos de firma</a></li><li><a href="/blog">Blog</a></li><li><a href="/acceder">Firmar con código de acceso</a></li></ul></div>
     <div><p class="footer-title">Legal</p><ul>
       <li><a href="/legal/terminos">Términos y condiciones</a></li><li><a href="/legal/privacidad">Política de privacidad</a></li>
       <li><a href="/legal/cookies">Cookies</a></li></ul></div>

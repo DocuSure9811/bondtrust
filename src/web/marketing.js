@@ -7,17 +7,17 @@ export const PLANS_VIEW = [
   {
     key: 'gratis', name: 'Gratis', monthly: 0, annual: 0, unit: 'para siempre',
     pitch: 'Para empezar a firmar hoy, sin tarjeta.',
-    features: ['5 sobres por mes', 'Firmantes ilimitados por sobre', 'Verificación del firmante con código por email', 'Sello digital X.509 y certificado de finalización', 'Registro de auditoría completo', 'Verificador público de documentos', 'API REST, webhooks y conexión con IA'],
+    features: ['5 sobres por mes', 'Firmantes ilimitados por sobre', 'Verificación por código y código de acceso anti-phishing', 'Sello digital X.509 y certificado de finalización', 'Plantillas, recordatorios y vencimientos', 'API REST, webhooks y conexión con IA', 'Los sobres corregidos o anulados no consumen cupo'],
   },
   {
     key: 'personal', name: 'Personal', monthly: 9, annual: 7, unit: 'por mes',
     pitch: 'Para profesionales independientes.',
-    features: ['25 sobres por mes', 'Todo lo del plan Gratis', 'Firma en orden secuencial', 'Reenvío y anulación de sobres', `Plantillas reutilizables ${soon}`, `Recordatorios automáticos ${soon}`],
+    features: ['25 sobres por mes', 'Todo lo del plan Gratis', 'Envío masivo desde CSV', 'Marca propia: logo y color', 'Firma en persona', 'Firma en español, inglés y portugués'],
   },
   {
     key: 'profesional', name: 'Profesional', monthly: 19, annual: 15, unit: 'por usuario / mes', popular: true,
     pitch: 'Para equipos que firman todos los días.',
-    features: ['Sobres ilimitados', 'Todo lo del plan Personal', `Marca propia en emails y firma ${soon}`, `Envío masivo desde CSV ${soon}`, `Campos condicionales y fórmulas ${soon}`, `20 SMS de verificación por mes ${soon}`],
+    features: ['Sobres ilimitados', 'Todo lo del plan Personal', 'Envío masivo de hasta 200 sobres por vez', `Campos condicionales y fórmulas ${soon}`, `20 SMS de verificación por mes ${soon}`, `Equipos con plantillas compartidas ${soon}`],
   },
   {
     key: 'empresa', name: 'Empresa', monthly: 36, annual: 29, unit: 'por usuario / mes',
@@ -179,10 +179,14 @@ export function pricing(config, user) {
     ['Verificador público de documentos', check, check, check, check],
     ['Firma en orden secuencial', check, check, check, check],
     ['Reenvío, anulación y rechazo con motivo', check, check, check, check],
-    ['Plantillas reutilizables', '—', soon, soon, soon],
-    ['Recordatorios automáticos', '—', soon, soon, soon],
-    ['Marca propia', '—', '—', soon, soon],
-    ['Envío masivo desde CSV', '—', '—', soon, soon],
+    ['Código de acceso anti-phishing para firmantes', check, check, check, check],
+    ['Plantillas reutilizables', check, check, check, check],
+    ['Recordatorios y vencimientos configurables', check, check, check, check],
+    ['Corregir sin consumir cupo', check, check, check, check],
+    ['Firma en persona', check, check, check, check],
+    ['Firma en español, inglés y portugués', check, check, check, check],
+    ['Marca propia (logo y color)', check, check, check, check],
+    ['Envío masivo desde CSV', check, check, check, check],
     ['SMS de verificación', '—', '—', `20 / mes ${soon}`, `50 / mes ${soon}`],
     ['API REST y webhooks firmados', check, check, check, check],
     ['Conexión con asistentes de IA (Claude, Cursor…)', check, check, check, check],
@@ -223,6 +227,10 @@ export function product(config, user) {
     ['firma', 'Firma electrónica', 'Tus firmantes reciben un email con un enlace personal. Lo abren en cualquier navegador, confirman su identidad y firman dibujando con el dedo, el mouse o escribiendo su nombre. Pueden rechazar indicando el motivo, y vos te enterás al instante.', ['Firma dibujada o escrita', 'Iniciales, fecha, nombre, email, texto y casillas', 'Pensado primero para el celular', 'Rechazo con motivo']],
     ['preparacion', 'Preparación de documentos', 'Subí un PDF, agregá a los firmantes y arrastrá los campos sobre cada página. Cada firmante tiene un color, así ves de un vistazo quién completa qué.', ['Editor visual página por página', 'Campos obligatorios u opcionales', 'Firma en paralelo o en orden', 'Destinatarios que solo reciben copia']],
     ['sello', 'Sello digital y auditoría', 'Cuando firma el último, DocSure estampa las firmas en el PDF, agrega un certificado de finalización con todo el registro y sella el archivo con un certificado X.509. Si alguien cambia un byte, el sello deja de ser válido.', ['Huella SHA-256 del original y del final', 'IP, navegador y hora de cada acción', 'Sello criptográfico PKCS#7', 'Verificador público en docsure.app/verificar']],
+    ['plantillas', 'Plantillas y envío masivo', 'Guardá cualquier documento con sus campos como plantilla. Usala para un envío puntual o mandá cientos de sobres desde un CSV, también por API.', ['Plantillas con roles y campos', 'Envío masivo de hasta 200 sobres por vez', 'Resultado por fila: enviado o con error', 'Disponible en el panel y en la API']],
+    ['recordatorios', 'Recordatorios, vencimientos y correcciones', 'Elegí cada cuántos días recordar a quien no firmó y cuándo vence el sobre. Si te equivocaste, corregí el sobre en un clic: los anulados y corregidos no consumen tu cupo.', ['Recordatorios cada 1, 2, 3, 5 o 7 días', 'Vencimiento de 1 a 120 días, extensible', 'Corregir crea un borrador idéntico para editar', 'Aviso por email y webhook al vencer']],
+    ['seguridad-firmante', 'Firma segura y sin phishing', 'Cada invitación trae un código de acceso: quien desconfía del email entra en docsure.app/acceder y lo escribe, sin tocar enlaces. También podés hacer firmar en persona en tu propio dispositivo.', ['Código de acceso en cada invitación', 'Verificación por código de un solo uso', 'Firma en persona atestiguada por el remitente', 'Firma en español, inglés y portugués']],
+    ['marca', 'Tu marca en cada firma', 'Subí tu logo y elegí tu color: tus firmantes ven tu marca en los emails y en la pantalla de firma, para que reconozcan que el documento viene de vos.', ['Logo en emails y en la firma', 'Color de marca', 'Nombre de tu empresa como remitente', 'Sin costo extra']],
     ['seguimiento', 'Seguimiento en tiempo real', 'Desde tu panel ves cada sobre: quién lo abrió, quién verificó su identidad y quién firmó. Podés reenviar el enlace o anular el sobre cuando quieras.', ['Estados por firmante', 'Historial completo', 'Reenvío seguro: el enlace anterior deja de funcionar', 'Descarga del original y del final']],
   ];
   const body = `
@@ -243,8 +251,7 @@ ${blocks
   <h2 class="section-title">Lo que viene</h2>
   <p class="section-lead">Funciones en desarrollo, incluidas en los planes cuando se lancen.</p>
   <ul class="roadmap">
-    <li>Plantillas reutilizables y compartidas ${soon}</li><li>Recordatorios y vencimientos automáticos ${soon}</li>
-    <li>Envío masivo desde CSV ${soon}</li><li>Marca propia (logo y colores) ${soon}</li>
+    <li>Equipos con roles y plantillas compartidas ${soon}</li><li>Campos condicionales y fórmulas ${soon}</li>
     <li>Verificación por SMS y WhatsApp ${soon}</li>
     <li>Firma electrónica avanzada (AES) ${soon}</li><li>Inicio de sesión único (SSO) ${soon}</li>
   </ul>
@@ -252,7 +259,7 @@ ${blocks
   return page({
     config, user, path: '/producto',
     title: 'Funcionalidades de firma electrónica',
-    description: 'Editor de campos sobre PDF, firma en orden, verificación del firmante con código, sello digital X.509, certificado de finalización y verificador público.',
+    description: 'Editor de campos sobre PDF, plantillas, envío masivo, recordatorios, firma en persona, código anti-phishing, sello digital X.509 y verificador público.',
     body,
   });
 }

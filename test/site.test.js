@@ -16,7 +16,7 @@ test('contraseñas con scrypt', async () => {
 });
 
 test('páginas públicas con SEO completo', async () => {
-  for (const path of ['/', '/producto', '/precios', '/soluciones', '/seguridad', '/verificar', '/desarrolladores', '/validez-legal', '/legal/terminos', '/legal/privacidad', '/legal/cookies', '/registro']) {
+  for (const path of ['/', '/producto', '/precios', '/soluciones', '/seguridad', '/verificar', '/desarrolladores', '/integraciones', '/tipos-de-firma', '/comparar/docusign', '/blog', '/blog/que-es-la-firma-electronica', '/blog/firma-electronica-vs-firma-digital', '/blog/como-detectar-emails-de-firma-falsos', '/acceder', '/validez-legal', '/legal/terminos', '/legal/privacidad', '/legal/cookies', '/registro']) {
     const res = await fetch(t.base + path);
     assert.equal(res.status, 200, path);
     const html = await res.text();

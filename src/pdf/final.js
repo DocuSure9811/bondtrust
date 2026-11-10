@@ -121,6 +121,11 @@ const EVENT_LABELS = {
   signed: 'Documento firmado',
   declined: 'Firma rechazada',
   resent: 'Invitación reenviada',
+  reminder_sent: 'Recordatorio enviado',
+  extended: 'Vencimiento extendido',
+  in_person_started: 'Firma en persona iniciada por el remitente',
+  in_person_verified: 'Identidad atestiguada en persona',
+  corrected: 'Sobre corregido',
   voided: 'Sobre anulado',
   completed: 'Sobre completado',
 };
@@ -199,7 +204,10 @@ async function addCertificate(pdf, { envelope, owner, recipients, events, siteUr
     const role = r.role === 'cc' ? 'Recibe copia del documento final' : `Firmante (orden ${r.routing_order}) · Firmado`;
     w.text(role, { color: MUTED });
     if (r.role === 'signer') {
-      w.text(`Verificación de identidad: código de un solo uso enviado al email · verificado ${fmt(r.verified_at)}`, { color: MUTED, size: 9 });
+      const method = r.in_person_by
+        ? 'firma en persona en el dispositivo del remitente, con su sesión autenticada'
+        : 'código de un solo uso enviado al email';
+      w.text(`Verificación de identidad: ${method} · verificado ${fmt(r.verified_at)}`, { color: MUTED, size: 9 });
       w.text(`Firmado: ${fmt(r.signed_at)} · IP ${r.action_ip || '—'}`, { color: MUTED, size: 9 });
       w.text(`Navegador: ${(r.action_user_agent || '—').slice(0, 160)}`, { color: MUTED, size: 8 });
       if (r.signature_image) {

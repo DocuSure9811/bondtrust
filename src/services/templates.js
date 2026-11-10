@@ -1,0 +1,120 @@
+import { randomToken } from '../security.js';
+import { HttpError, cleanText } from '../validate.js';
+import { createDraft, saveDraft, sendEnvelope } from './envelopes.js';
+
+const MAX_BULK_ROWS = 200;
+
+function checkId(id) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(id))) throw new HttpError(404, 'Plantilla no encontrada.', 'not_found');
+}
+
+/** Guarda un sobre (en cualquier estado) como plantilla: documento, roles y campos, sin datos de personas. */
+export async function saveTemplate(ctx, ownerId, envelopeId, name) {
+  checkId(envelopeId);
+  const clean = cleanText(name, { max: 120, field: 'el nombre de la plantilla' });
+  const { rows: [env] } = await ctx.pool.query(
+    'SELECT id, message, sequential, language, original_pdf, page_count FROM envelopes WHERE id = $1 AND owner_id = $2',
+    [envelopeId, ownerId],
+  );
+  if (!env) throw new HttpError(404, 'Sobre no encontrado.', 'not_found');
+  const { rows: recips } = await ctx.pool.query('SELECT id, role, routing_order FROM recipients WHERE envelope_id = $1 ORDER BY position', [envelopeId]);
+  if (!recips.some((r) => r.role === 'signer')) throw new HttpError(400, 'El sobre necesita al menos un firmante para guardarse como plantilla.', 'validation');
+  const index = new Map(recips.map((r, i) => [r.id, i]));
+  let signerN = 0;
+  let ccN = 0;
+  const roles = recips.map((r) => ({
+    label: r.role === 'cc' ? `Copia ${(ccN += 1)}` : `Firmante ${(signerN += 1)}`,
+    role: r.role,
+    order: r.routing_order,
+  }));
+  const { rows: fields } = await ctx.pool.query('SELECT recipient_id, type, page, x, y, w, h, required, label FROM fields WHERE envelope_id = $1', [envelopeId]);
+  const tplFields = fields.map((f) => ({ role: index.get(f.recipient_id), type: f.type, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h, required: f.required, label: f.label }));
+  const { rows: [tpl] } = await ctx.pool.query(
+    `INSERT INTO templates (owner_id, name, message, sequential, language, pdf, page_count, roles, fields)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name, created_at`,
+    [ownerId, clean, env.message, env.sequential, env.language, env.original_pdf, env.page_count, JSON.stringify(roles), JSON.stringify(tplFields)],
+  );
+  return tpl;
+}
+
+export async function listTemplates(ctx, ownerId) {
+  const { rows } = await ctx.pool.query(
+    `SELECT id, name, page_count, roles, sequential, language, created_at,
+            jsonb_array_length(fields) AS field_count FROM templates WHERE owner_id = $1 ORDER BY created_at DESC`,
+    [ownerId],
+  );
+  return rows;
+}
+
+export async function deleteTemplate(ctx, ownerId, id) {
+  checkId(id);
+  const { rowCount } = await ctx.pool.query('DELETE FROM templates WHERE id = $1 AND owner_id = $2', [id, ownerId]);
+  if (!rowCount) throw new HttpError(404, 'Plantilla no encontrada.', 'not_found');
+  return { ok: true };
+}
+
+async function getTemplate(ctx, ownerId, id) {
+  checkId(id);
+  const { rows: [tpl] } = await ctx.pool.query('SELECT * FROM templates WHERE id = $1 AND owner_id = $2', [id, ownerId]);
+  if (!tpl) throw new HttpError(404, 'Plantilla no encontrada.', 'not_found');
+  return tpl;
+}
+
+/**
+ * Crea un sobre desde una plantilla. `recipients` va en el mismo orden que los roles.
+ * Si `send` es true lo envía; si falla el envío, no deja el borrador.
+ */
+export async function useTemplate(ctx, owner, templateId, body, meta, idempotencyKey) {
+  const tpl = await getTemplate(ctx, owner.id, templateId);
+  const recipientsIn = Array.isArray(body.recipients) ? body.recipients : [];
+  if (recipientsIn.length !== tpl.roles.length) {
+    throw new HttpError(400, `La plantilla tiene ${tpl.roles.length} rol(es): indicá un destinatario para cada uno (${tpl.roles.map((r) => r.label).join(', ')}).`, 'validation');
+  }
+  const title = body.title || tpl.name;
+  const { id } = await createDraft(ctx, owner.id, { title, pdf: tpl.pdf });
+  try {
+    await ctx.pool.query('UPDATE envelopes SET template_id = $2 WHERE id = $1', [id, tpl.id]);
+    await saveDraft(ctx, owner.id, id, {
+      title,
+      message: body.message ?? tpl.message,
+      sequential: tpl.sequential,
+      language: body.language || tpl.language,
+      expire_days: body.expire_days,
+      reminder_days: body.reminder_days,
+      recipients: tpl.roles.map((role, i) => ({ key: `r${i}`, name: recipientsIn[i]?.name, email: recipientsIn[i]?.email, role: role.role, order: role.order })),
+      fields: tpl.fields.map((f) => ({ recipientKey: `r${f.role}`, type: f.type, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h, required: f.required, label: f.label })),
+    });
+    if (body.send) await sendEnvelope(ctx, owner, id, idempotencyKey || randomToken(16), meta);
+  } catch (err) {
+    await ctx.pool.query(`DELETE FROM envelopes WHERE id = $1 AND status = 'draft'`, [id]);
+    throw err;
+  }
+  return { id };
+}
+
+/** Envío masivo: un sobre por fila, para plantillas de un solo firmante. Se detiene si se agota el cupo. */
+export async function bulkSend(ctx, owner, templateId, rows, meta) {
+  const tpl = await getTemplate(ctx, owner.id, templateId);
+  if (tpl.roles.length !== 1 || tpl.roles[0].role !== 'signer') {
+    throw new HttpError(400, 'El envío masivo funciona con plantillas de un solo firmante.', 'validation');
+  }
+  if (!Array.isArray(rows) || rows.length === 0) throw new HttpError(400, 'Cargá al menos una fila con nombre y email.', 'validation');
+  if (rows.length > MAX_BULK_ROWS) throw new HttpError(400, `Máximo ${MAX_BULK_ROWS} filas por envío masivo.`, 'validation');
+  const results = [];
+  let stopped = false;
+  const batch = randomToken(8);
+  for (const [i, row] of rows.entries()) {
+    if (stopped) {
+      results.push({ row: i + 1, email: row?.email, status: 'skipped', error: 'No se envió porque se alcanzó el límite del plan.' });
+      continue;
+    }
+    try {
+      const { id } = await useTemplate(ctx, owner, templateId, { recipients: [{ name: row?.name, email: row?.email }], send: true }, meta, `bulk:${batch}:${i}`);
+      results.push({ row: i + 1, email: row?.email, status: 'sent', envelope_id: id });
+    } catch (err) {
+      if (err.code === 'quota') stopped = true;
+      results.push({ row: i + 1, email: row?.email, status: 'error', error: err.message });
+    }
+  }
+  return { sent: results.filter((r) => r.status === 'sent').length, results };
+}

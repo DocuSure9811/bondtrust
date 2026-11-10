@@ -52,6 +52,9 @@ async function saveDraft() {
       title: state.title,
       message: state.message,
       sequential: state.sequential,
+      language: $('opt-language').value,
+      expire_days: Number($('opt-expire').value),
+      reminder_days: Number($('opt-reminder').value),
       recipients: state.recipients.map((r, i) => ({ key: r.key, name: r.name, email: r.email, role: r.role, order: state.sequential ? Number(r.order) || i + 1 : 1 })),
       fields: state.fields.map(({ recipientKey, type, page, x, y, w, h, required, label }) => ({ recipientKey, type, page, x, y, w, h, required, label })),
     },
@@ -315,14 +318,23 @@ function renderReview() {
     ${state.message ? `<div class="review-row"><strong>Mensaje</strong><span>${esc(state.message)}</span></div>` : ''}`;
 }
 
+$('opt-template').addEventListener('change', (e) => {
+  $('opt-template-name-wrap').hidden = !e.target.checked;
+  if (e.target.checked && !$('opt-template-name').value) $('opt-template-name').value = state.title;
+});
+
 $('send').addEventListener('click', async () => {
   const err = $('err4');
   const btn = $('send');
   err.textContent = '';
+  const tplName = $('opt-template').checked ? $('opt-template-name').value.trim() : '';
+  if ($('opt-template').checked && !tplName) return void (err.textContent = 'Poné un nombre a la plantilla.');
   btn.disabled = true;
   btn.textContent = 'Enviando…';
   try {
+    await saveDraft();
     await api(`/api/sobres/${state.id}/enviar`, { method: 'POST', headers: { 'Idempotency-Key': state.idempotencyKey } });
+    if (tplName) await api('/api/plantillas', { method: 'POST', body: { envelopeId: state.id, name: tplName } }).catch(() => {});
     location.href = `/app/sobres/${state.id}`;
   } catch (e) {
     err.textContent = e.message;
@@ -347,6 +359,9 @@ if (draftId) {
       $('title').value = envelope.title;
       $('message').value = envelope.message;
       $('sequential').checked = envelope.sequential;
+      $('opt-language').value = envelope.language || 'es';
+      $('opt-expire').value = String([7, 15, 30, 60, 90, 120].includes(envelope.expire_days) ? envelope.expire_days : 30);
+      $('opt-reminder').value = String(envelope.reminder_days ?? 2);
       recipients.forEach((r) => addRecipient({ name: r.name, email: r.email, role: r.role, order: r.routing_order }));
       state.fields = fields.map((f) => ({
         id: crypto.randomUUID(),

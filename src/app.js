@@ -8,8 +8,11 @@ import { createRateLimiter } from './rate-limit.js';
 import { hashPassword, hmac, randomToken, safeEqualHex, sha256Hex, verifyPassword } from './security.js';
 import { createApiV1 } from './api-v1.js';
 import * as apiKeys from './services/apikeys.js';
+import * as account from './services/account.js';
 import * as env from './services/envelopes.js';
+import * as templatesSvc from './services/templates.js';
 import * as webhooks from './services/webhooks.js';
+import * as content from './web/content.js';
 import * as devdocs from './web/devdocs.js';
 import { HttpError, cleanEmail, cleanPassword, cleanText } from './validate.js';
 import * as views from './web/app-views.js';
@@ -133,7 +136,7 @@ export function createApp({ pool, config, mailer }) {
   });
 
   app.get('/sitemap.xml', (req, res) => {
-    const urls = marketing.SITEMAP_PATHS.map((p) => `<url><loc>${config.siteUrl}${p}</loc><changefreq>weekly</changefreq><priority>${p === '/' ? '1.0' : '0.7'}</priority></url>`).join('');
+    const urls = [...marketing.SITEMAP_PATHS, ...content.CONTENT_PATHS].map((p) => `<url><loc>${config.siteUrl}${p}</loc><changefreq>weekly</changefreq><priority>${p === '/' ? '1.0' : '0.7'}</priority></url>`).join('');
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
   });
 
@@ -163,6 +166,15 @@ export function createApp({ pool, config, mailer }) {
 
   // ---------- Desarrolladores ----------
   app.get('/desarrolladores', (req, res) => html(res, devdocs.developersPage(config, req.user)));
+  app.get('/acceder', (req, res) => html(res, views.accessPage(config)));
+  app.get('/integraciones', (req, res) => html(res, content.integrations(config, req.user)));
+  app.get('/tipos-de-firma', (req, res) => html(res, content.signatureTypes(config, req.user)));
+  app.get('/comparar/docusign', (req, res) => html(res, content.compareDocusign(config, req.user)));
+  app.get('/blog', (req, res) => html(res, content.blogIndex(config, req.user)));
+  app.get('/blog/:slug', (req, res, next) => {
+    const out = content.blogPost(config, req.user, req.params.slug);
+    return out ? html(res, out) : next();
+  });
   app.get('/llms.txt', (req, res) => res.type('text/plain; charset=utf-8').set('Cache-Control', 'public, max-age=3600').send(devdocs.llmsTxt(config)));
   app.get('/openapi.json', (req, res) => res.set({ 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' }).json(devdocs.openapiSpec(config)));
 
@@ -172,6 +184,38 @@ export function createApp({ pool, config, mailer }) {
   app.get('/app/sobres/:id', requirePageUser, (req, res) => html(res, views.envelopePage(config, req.user)));
   app.get('/app/api', requirePageUser, (req, res) => html(res, views.apiPage(config, req.user)));
   app.get('/app/conectar', requirePageUser, (req, res) => html(res, views.connectPage(config, req.user)));
+  app.get('/app/plantillas', requirePageUser, (req, res) => html(res, views.templatesPage(config, req.user)));
+  app.get('/app/ajustes', requirePageUser, (req, res) => html(res, views.settingsPage(config, req.user)));
+
+  // ---------- API del panel: corrección, vencimiento, firma en persona ----------
+  app.post('/api/sobres/:id/corregir', requireUser, asyncRoute(async (req, res) => res.json(await env.correctEnvelope(ctx, req.user.id, req.params.id, clientMeta(req)))));
+  app.post('/api/sobres/:id/extender', requireUser, json, asyncRoute(async (req, res) => res.json(await env.extendExpiration(ctx, req.user.id, req.params.id, req.body.days, clientMeta(req)))));
+  app.post('/api/sobres/:id/destinatarios/:rid/en-persona', requireUser, asyncRoute(async (req, res) => {
+    limit(`in-person:${req.user.id}`, 60, 3600_000);
+    res.json(await env.startInPerson(ctx, req.user.id, req.params.id, req.params.rid));
+  }));
+
+  // ---------- API del panel: plantillas y envío masivo ----------
+  app.get('/api/plantillas', requireUser, asyncRoute(async (req, res) => res.json({ data: await templatesSvc.listTemplates(ctx, req.user.id) })));
+  app.post('/api/plantillas', requireUser, json, asyncRoute(async (req, res) => res.status(201).json(await templatesSvc.saveTemplate(ctx, req.user.id, req.body.envelopeId, req.body.name))));
+  app.delete('/api/plantillas/:id', requireUser, asyncRoute(async (req, res) => res.json(await templatesSvc.deleteTemplate(ctx, req.user.id, req.params.id))));
+  app.post('/api/plantillas/:id/usar', requireUser, json, asyncRoute(async (req, res) => res.status(201).json(await templatesSvc.useTemplate(ctx, req.user, req.params.id, req.body, clientMeta(req)))));
+  app.post('/api/plantillas/:id/masivo', requireUser, json, asyncRoute(async (req, res) => {
+    limit(`bulk:${req.user.id}`, 10, 3600_000);
+    res.json(await templatesSvc.bulkSend(ctx, req.user, req.params.id, req.body.rows, clientMeta(req)));
+  }));
+
+  // ---------- API del panel: cuenta y marca ----------
+  const logoBody = express.raw({ type: ['image/png', 'image/jpeg'], limit: '250kb' });
+  app.get('/api/ajustes', requireUser, asyncRoute(async (req, res) => res.json(await account.getSettings(ctx, req.user.id))));
+  app.put('/api/ajustes', requireUser, json, asyncRoute(async (req, res) => res.json(await account.updateSettings(ctx, req.user.id, req.body))));
+  app.put('/api/ajustes/logo', requireUser, logoBody, asyncRoute(async (req, res) => res.json(await account.setLogo(ctx, req.user.id, req.body))));
+  app.delete('/api/ajustes/logo', requireUser, asyncRoute(async (req, res) => res.json(await account.deleteLogo(ctx, req.user.id))));
+  app.get('/marca/:id', asyncRoute(async (req, res, next) => {
+    const logo = await account.getLogo(ctx, req.params.id);
+    if (!logo) return next();
+    res.set({ 'Content-Type': logo.type, 'Cache-Control': 'public, max-age=3600' }).send(logo.bytes);
+  }));
 
   // ---------- API del panel: claves, webhooks y autorización de agentes ----------
   app.get('/api/claves', requireUser, asyncRoute(async (req, res) => res.json({ data: await apiKeys.listApiKeys(ctx, req.user.id) })));
@@ -331,6 +375,9 @@ export function createApp({ pool, config, mailer }) {
   }));
   app.post('/api/firmar/:token/rechazar', json, asyncRoute(async (req, res) => {
     res.json(await env.declineDocument(ctx, req.params.token, { ...req.body, session: session(req) }, clientMeta(req)));
+  }));
+  app.post('/api/firmar/:token/presencial', asyncRoute(async (req, res) => {
+    res.json(await env.inPersonSession(ctx, req.params.token, req.user, clientMeta(req)));
   }));
 
   // ---------- API: verificador público ----------

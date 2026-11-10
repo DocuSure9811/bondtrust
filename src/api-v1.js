@@ -1,6 +1,7 @@
 import express from 'express';
 import * as keys from './services/apikeys.js';
 import * as env from './services/envelopes.js';
+import * as templatesSvc from './services/templates.js';
 import * as hooks from './services/webhooks.js';
 import { HttpError } from './validate.js';
 
@@ -85,6 +86,32 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
     const version = req.query.version === 'original' ? 'original' : 'final';
     const doc = await env.ownerPdf(ctx, req.apiUser.id, req.params.id, version);
     sendPdf(res, doc.pdf, version === 'final' ? `${doc.title} - firmado` : doc.title);
+  }));
+
+  router.post('/envelopes/:id/correct', asyncRoute(async (req, res) => {
+    const { id } = await env.correctEnvelope(ctx, req.apiUser.id, req.params.id, clientMeta(req));
+    res.status(201).json(await env.apiEnvelope(ctx, req.apiUser.id, id));
+  }));
+
+  router.post('/envelopes/:id/extend', asyncRoute(async (req, res) => {
+    await env.extendExpiration(ctx, req.apiUser.id, req.params.id, req.body?.days, clientMeta(req));
+    res.json(await env.apiEnvelope(ctx, req.apiUser.id, req.params.id));
+  }));
+
+  router.get('/templates', asyncRoute(async (req, res) => {
+    const list = await templatesSvc.listTemplates(ctx, req.apiUser.id);
+    res.json({ data: list.map((t) => ({ id: t.id, name: t.name, page_count: t.page_count, roles: t.roles, field_count: t.field_count, language: t.language, created_at: t.created_at })) });
+  }));
+
+  router.post('/templates/:id/envelopes', asyncRoute(async (req, res) => {
+    const body = { ...(req.body || {}), send: req.body?.send !== false };
+    const { id } = await templatesSvc.useTemplate(ctx, req.apiUser, req.params.id, body, clientMeta(req), req.headers['idempotency-key']);
+    res.status(201).json(await env.apiEnvelope(ctx, req.apiUser.id, id));
+  }));
+
+  router.post('/templates/:id/bulk', asyncRoute(async (req, res) => {
+    limit(`bulk:${req.apiUser.id}`, 10, 3600_000);
+    res.json(await templatesSvc.bulkSend(ctx, req.apiUser, req.params.id, req.body?.rows, clientMeta(req)));
   }));
 
   router.get('/webhooks', asyncRoute(async (req, res) => res.json({ data: await hooks.listWebhooks(ctx, req.apiUser.id), events: hooks.WEBHOOK_EVENTS })));

@@ -432,3 +432,22 @@ dialog::backdrop { background: rgba(6, 38, 31, .55); }
 .params td:first-child { font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
 .callout { border-left: 4px solid var(--brand); background: var(--brand-50); padding: 14px 18px; border-radius: 0 12px 12px 0; margin: 16px 0; }
 @media (max-width: 860px) { .docs { grid-template-columns: 1fr; } .docs-nav { position: static; } }
+
+/* v0.4: plantillas, ajustes, acceso, opciones */
+.app-nav { overflow-x: auto; scrollbar-width: none; }
+.options-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+.color-input { width: 80px; height: 44px; padding: 4px; }
+.logo-preview img { max-height: 64px; max-width: 240px; display: block; margin: 8px 0 12px; }
+.access-input { letter-spacing: .2em; font-size: 1.4rem; max-width: none; text-transform: uppercase; }
+.tpl-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sign-brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; }
+.sign-brand img { max-height: 34px; max-width: 160px; }
+.lang-switch { display: flex; gap: 4px; margin-left: 12px; }
+.lang-switch button { font: inherit; font-size: .8rem; font-weight: 600; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 3px 8px; cursor: pointer; color: var(--muted); }
+.lang-switch button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.usage { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 18px; }
+.usage-bar { height: 8px; background: var(--soft); border-radius: 99px; overflow: hidden; margin: 8px 0 6px; }
+.usage-bar span { display: block; height: 100%; background: var(--brand); border-radius: 99px; }
+.status-expired { background: var(--warn-50); color: #8a5a00; }
+.bulk-result { max-height: 260px; overflow: auto; font-size: .88rem; }
+@media (max-width: 860px) { .options-grid { grid-template-columns: 1fr; } }

@@ -151,10 +151,15 @@ const ENDPOINTS = [
   ['GET', '/envelopes', 'Lista los sobres. Filtro opcional ?status=draft|sent|completed|declined|voided.'],
   ['GET', '/envelopes/{id}', 'Estado del sobre, de cada destinatario y su historial.'],
   ['POST', '/envelopes/{id}/send', 'Envía un borrador (creado con "send": false).'],
-  ['POST', '/envelopes/{id}/void', 'Anula un sobre en curso.'],
+  ['POST', '/envelopes/{id}/void', 'Anula un sobre en curso. Los anulados no consumen cupo.'],
+  ['POST', '/envelopes/{id}/correct', 'Corrige: anula el sobre (si está en curso) y crea un borrador idéntico para editar y reenviar.'],
+  ['POST', '/envelopes/{id}/extend', 'Extiende el vencimiento: {"days": 1-120} desde hoy.'],
   ['POST', '/envelopes/{id}/recipients/{recipient_id}/resend', 'Reenvía la invitación (el enlace anterior deja de funcionar).'],
   ['GET', '/envelopes/{id}/document?version=original|final', 'Descarga el PDF original o el final firmado y sellado.'],
   ['DELETE', '/envelopes/{id}', 'Borra un borrador.'],
+  ['GET', '/templates', 'Lista las plantillas con sus roles.'],
+  ['POST', '/templates/{id}/envelopes', 'Crea y envía un sobre desde una plantilla: {"recipients": [...] en el orden de los roles}.'],
+  ['POST', '/templates/{id}/bulk', 'Envío masivo (plantillas de un firmante): {"rows": [{"name","email"}]} hasta 200.'],
   ['GET', '/webhooks', 'Lista los webhooks.'],
   ['POST', '/webhooks', 'Crea un webhook. Devuelve su secreto de firma una sola vez.'],
   ['DELETE', '/webhooks/{id}', 'Elimina un webhook.'],
@@ -204,6 +209,9 @@ Cuerpo JSON:
 - message (string, opcional): mensaje para los firmantes.
 - sequential (bool, opcional): true = firman en orden según "order".
 - send (bool, opcional, por defecto true): false deja el sobre como borrador.
+- language (opcional): "es" | "en" | "pt". Idioma de los emails y de la pantalla de firma.
+- expire_days (opcional, 1-120, por defecto 30): días hasta que vence el sobre.
+- reminder_days (opcional, 0 | 1 | 2 | 3 | 5 | 7, por defecto 0): cada cuántos días recordar a quien no firmó (máx. 5 recordatorios).
 
 Tipos de campo: ${FIELD_TYPES.map(([t, d]) => `${t} (${d})`).join('; ')}.
 Cada firmante necesita al menos un campo "signature".
@@ -226,6 +234,22 @@ Destinatario: created → sent → viewed → signed | declined.
 \`\`\`bash
 ${ex.status}
 \`\`\`
+
+## Plantillas y envío masivo
+
+Las plantillas se crean desde el panel ("Guardar como plantilla" en cualquier sobre). Por API:
+- GET /templates devuelve cada plantilla con "roles" (en orden).
+- POST /templates/{id}/envelopes con {"recipients": [{"name","email"}, ...]} (uno por rol, en el mismo orden). Opcionales: title, message, language, expire_days, reminder_days, send (por defecto true).
+- POST /templates/{id}/bulk con {"rows": [{"name","email"}, ...]} para plantillas de un solo firmante. Devuelve el resultado por fila y se detiene si se agota el cupo del plan.
+
+## Corregir y extender
+
+- POST /envelopes/{id}/correct: anula el sobre en curso (no consume cupo) y devuelve un borrador idéntico; editalo con el panel o envialo con POST /envelopes/{id}/send.
+- POST /envelopes/{id}/extend con {"days": 15}: nuevo vencimiento contado desde hoy.
+
+## Seguridad para los firmantes
+
+Cada invitación incluye un enlace personal y un código de acceso de 12 caracteres: el firmante puede entrar en ${config.appUrl}/acceder y escribirlo sin tocar enlaces del email. Antes de ver el documento, siempre confirma su identidad con un código enviado a su email.
 
 ## Webhooks
 
@@ -304,6 +328,9 @@ export function openapiSpec(config) {
             fields: { type: 'array', items: { $ref: '#/components/schemas/Field' }, description: 'Opcional. Sin fields se ubican firma y fecha al pie de la última página.' },
             sequential: { type: 'boolean', default: false },
             send: { type: 'boolean', default: true },
+            language: { type: 'string', enum: ['es', 'en', 'pt'], default: 'es' },
+            expire_days: { type: 'integer', minimum: 1, maximum: 120, default: 30 },
+            reminder_days: { type: 'integer', enum: [0, 1, 2, 3, 5, 7], default: 0 },
           },
         },
         Envelope: {
@@ -339,6 +366,11 @@ export function openapiSpec(config) {
       '/envelopes/{id}/void': { post: { summary: 'Anular un sobre en curso', security: auth, parameters: [idParam], responses: { 200: envResp, 409: err } } },
       '/envelopes/{id}/recipients/{recipient_id}/resend': { post: { summary: 'Reenviar invitación', security: auth, parameters: [idParam, { name: 'recipient_id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: { description: 'ok' }, 409: err, 429: err } } },
       '/envelopes/{id}/document': { get: { summary: 'Descargar PDF', security: auth, parameters: [idParam, { name: 'version', in: 'query', schema: { type: 'string', enum: ['original', 'final'], default: 'final' } }], responses: { 200: { description: 'PDF', content: { 'application/pdf': {} } }, 404: err } } },
+      '/envelopes/{id}/correct': { post: { summary: 'Corregir: anula y crea un borrador idéntico', security: auth, parameters: [idParam], responses: { 201: envResp, 409: err } } },
+      '/envelopes/{id}/extend': { post: { summary: 'Extender vencimiento', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['days'], properties: { days: { type: 'integer', minimum: 1, maximum: 120 } } } } } }, responses: { 200: envResp, 409: err } } },
+      '/templates': { get: { summary: 'Listar plantillas', security: auth, responses: { 200: { description: 'Lista con roles' } } } },
+      '/templates/{id}/envelopes': { post: { summary: 'Crear y enviar desde una plantilla', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['recipients'], properties: { recipients: { type: 'array', items: { $ref: '#/components/schemas/Recipient' } }, title: { type: 'string' }, message: { type: 'string' }, language: { type: 'string', enum: ['es', 'en', 'pt'] }, expire_days: { type: 'integer' }, reminder_days: { type: 'integer' }, send: { type: 'boolean', default: true } } } } } }, responses: { 201: envResp, 400: err, 402: err } } },
+      '/templates/{id}/bulk': { post: { summary: 'Envío masivo desde una plantilla de un firmante', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['rows'], properties: { rows: { type: 'array', maxItems: 200, items: { type: 'object', properties: { name: { type: 'string' }, email: { type: 'string', format: 'email' } } } } } } } } }, responses: { 200: { description: 'Resultado por fila' }, 400: err } } },
       '/webhooks': {
         get: { summary: 'Listar webhooks', security: auth, responses: { 200: { description: 'Lista' } } },
         post: { summary: 'Crear webhook (devuelve el secreto una vez)', security: auth, requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Webhook' } } } }, responses: { 201: { description: 'Webhook con secret' }, 400: err } },
@@ -399,6 +431,9 @@ export function developersPage(config, user) {
         <tr><td>message</td><td>Opcional. Mensaje para los firmantes.</td></tr>
         <tr><td>sequential</td><td>Opcional. <code>true</code> para firmar en orden según <code>order</code>.</td></tr>
         <tr><td>send</td><td>Opcional, por defecto <code>true</code>. <code>false</code> deja un borrador.</td></tr>
+        <tr><td>language</td><td>Opcional. <code>es</code>, <code>en</code> o <code>pt</code>: idioma de los emails y de la firma.</td></tr>
+        <tr><td>expire_days</td><td>Opcional, de 1 a 120 (por defecto 30).</td></tr>
+        <tr><td>reminder_days</td><td>Opcional: 0, 1, 2, 3, 5 o 7 días entre recordatorios (por defecto 0).</td></tr>
       </tbody></table>
       <h3>cURL</h3>${code(ex.send)}
       <h3>Node.js</h3>${code(ex.node)}

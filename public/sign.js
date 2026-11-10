@@ -1,5 +1,6 @@
 import { api, esc } from './app-common.js';
 import { renderPdf } from './pdfview.js';
+import { DICT, pickLang } from './sign-i18n.js';
 
 const token = location.pathname.split('/').pop();
 const root = document.getElementById('sign-root');
@@ -7,87 +8,157 @@ const info = document.getElementById('doc-info');
 const base = `/api/firmar/${encodeURIComponent(token)}`;
 let session = null;
 let data = null;
+let meta = null;
+let lang = pickLang();
+let t = DICT[lang];
+let step = 'identity';
 const values = {};
 let signature = null;
 let initials = null;
+
+/** Mensaje de error en el idioma del firmante (el español usa el texto detallado del servidor). */
+const errMsg = (e) => (lang === 'es' ? e.message : t.errors[e.code] || e.message);
 
 function card(html) {
   root.innerHTML = `<div class="sign-card">${html}</div>`;
 }
 
-function fatal(message) {
-  card(`<h1>No podés firmar con este enlace</h1><p class="muted">${esc(message)}</p><a class="btn btn-ghost" href="/">Conocé DocSure</a>`);
+function fatal(e) {
+  card(`<h1>${t.cantSign}</h1><p class="muted">${esc(errMsg(e))}</p><a class="btn btn-ghost" href="/">${t.knowDocsure}</a>`);
+}
+
+function header() {
+  const b = meta.brand || {};
+  const brand = b.logoUrl ? `<img alt="${esc(b.name)}" src="${esc(b.logoUrl)}">` : esc(b.name && b.name !== 'DocSure' ? b.name : '');
+  info.innerHTML = `<strong>${esc(meta.title)}</strong>${esc(t.sentBy(meta.senderName))}`;
+  const brandBox = document.querySelector('.sign-brand');
+  if (brandBox) brandBox.innerHTML = brand;
+  if (/^#[0-9a-f]{6}$/i.test(b.color || '')) {
+    document.documentElement.style.setProperty('--brand', b.color);
+    document.documentElement.style.setProperty('--brand-600', b.color);
+  }
+  let sw = document.querySelector('.lang-switch');
+  if (!sw) {
+    sw = document.createElement('div');
+    sw.className = 'lang-switch';
+    sw.setAttribute('role', 'group');
+    sw.setAttribute('aria-label', 'Idioma / Language');
+    document.querySelector('.sign-header-row').appendChild(sw);
+    sw.addEventListener('click', (e) => {
+      const l = e.target.dataset?.lang;
+      if (!l || l === lang) return;
+      setLang(l);
+    });
+  }
+  sw.innerHTML = ['es', 'en', 'pt'].map((l) => `<button type="button" data-lang="${l}" aria-pressed="${l === lang}">${l.toUpperCase()}</button>`).join('');
+  document.documentElement.lang = lang;
+}
+
+function setLang(l) {
+  lang = l;
+  t = DICT[l];
+  header();
+  if (step === 'identity') identityStep();
+  else if (step === 'code') codeStep();
+  else if (step === 'document') {
+    document.getElementById('instructions').innerHTML = t.instructions;
+    document.querySelector('.sign-bar')?.remove();
+    document.querySelectorAll('.sbox').forEach((el) => el.remove());
+    placeFields();
+    renderBar();
+  }
 }
 
 // ---------- 1. Abrir ----------
-let meta;
 try {
   meta = await api(base);
 } catch (err) {
-  fatal(err.message);
+  fatal(err);
 }
 
 if (meta) {
-  document.title = `Firmar: ${meta.title} | DocSure`;
-  info.innerHTML = `<strong>${esc(meta.title)}</strong>Enviado por ${esc(meta.senderName)}`;
-  identityStep();
+  lang = pickLang(meta.language);
+  t = DICT[lang];
+  document.title = `${meta.title} | DocSure`;
+  const logo = document.querySelector('.sign-header .logo');
+  logo.insertAdjacentHTML('afterend', '<span class="sign-brand"></span>');
+  header();
+  if (meta.inPerson) inPersonStep();
+  else identityStep();
+}
+
+function inPersonStep() {
+  step = 'identity';
+  card(`<span class="ic ic-shield" aria-hidden="true"></span><h1>${t.inPersonTitle}</h1>
+    <p>${t.inPersonText(esc(meta.recipientName))}</p>
+    <button class="btn btn-primary btn-lg btn-block" id="start">${t.inPersonStart}</button>
+    <p class="form-error" role="alert" id="err"></p>`);
+  document.getElementById('start').addEventListener('click', async () => {
+    try {
+      session = (await api(`${base}/presencial`, { method: 'POST' })).session;
+      await documentStep();
+    } catch (e) {
+      document.getElementById('err').textContent = errMsg(e);
+    }
+  });
 }
 
 function identityStep() {
-  card(`<h1>Hola ${esc(meta.recipientName)}</h1>
-    <p><strong>${esc(meta.senderName)}</strong> te envió <strong>${esc(meta.title)}</strong> para firmar.</p>
-    <p class="muted">Para proteger el documento, primero confirmá tu identidad con un código que te enviamos a <strong>${esc(meta.emailMasked)}</strong>.</p>
-    <button class="btn btn-primary btn-lg btn-block" id="send-code">Enviarme el código</button>
+  step = 'identity';
+  if (meta.inPerson) return inPersonStep();
+  card(`<h1>${esc(t.hello(meta.recipientName))}</h1>
+    <p>${t.sentYou(esc(meta.senderName), esc(meta.title))}</p>
+    <p class="muted">${t.protect(esc(meta.emailMasked))}</p>
+    <button class="btn btn-primary btn-lg btn-block" id="send-code">${t.sendCode}</button>
     <p class="form-error" role="alert" id="err"></p>`);
   document.getElementById('send-code').addEventListener('click', sendCode);
 }
 
 async function sendCode() {
-  const err = document.getElementById('err');
   const btn = document.getElementById('send-code');
   btn.disabled = true;
   try {
     await api(`${base}/codigo`, { method: 'POST' });
     codeStep();
   } catch (e) {
-    err.textContent = e.message;
+    document.getElementById('err').textContent = errMsg(e);
     btn.disabled = false;
-    if (e.code === 'rate_limited') codeStep(e.message);
+    if (e.code === 'rate_limited') codeStep(errMsg(e));
   }
 }
 
 function codeStep(notice = '') {
-  card(`<h1>Ingresá el código</h1>
-    <p class="muted">Te enviamos un código de 6 dígitos a <strong>${esc(meta.emailMasked)}</strong>. Vence en 10 minutos.</p>
+  step = 'code';
+  card(`<h1>${t.enterCode}</h1>
+    <p class="muted">${t.codeSent(esc(meta.emailMasked))}</p>
     <form id="code-form" novalidate>
-      <label class="visually-hidden" for="code">Código de verificación</label>
+      <label class="visually-hidden" for="code">${t.codeLabel}</label>
       <input id="code" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
       <p class="form-error" role="alert" id="err">${esc(notice)}</p>
-      <button class="btn btn-primary btn-lg btn-block" type="submit">Verificar</button>
+      <button class="btn btn-primary btn-lg btn-block" type="submit">${t.verify}</button>
     </form>
-    <p class="fine"><button class="btn btn-ghost btn-sm" type="button" id="resend">Reenviar código</button></p>`);
+    <p class="fine"><button class="btn btn-ghost btn-sm" type="button" id="resend">${t.resendCode}</button></p>`);
   const input = document.getElementById('code');
   input.focus();
   input.addEventListener('input', () => { input.value = input.value.replace(/\D/g, '').slice(0, 6); });
   document.getElementById('resend').addEventListener('click', async () => {
     try {
       await api(`${base}/codigo`, { method: 'POST' });
-      document.getElementById('err').textContent = 'Te enviamos un código nuevo.';
+      document.getElementById('err').textContent = t.codeResent;
     } catch (e) {
-      document.getElementById('err').textContent = e.message;
+      document.getElementById('err').textContent = errMsg(e);
     }
   });
   document.getElementById('code-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = document.getElementById('err');
     err.textContent = '';
-    if (input.value.length !== 6) return void (err.textContent = 'El código tiene 6 dígitos.');
+    if (input.value.length !== 6) return void (err.textContent = t.codeDigits);
     try {
-      const res = await api(`${base}/verificar`, { method: 'POST', body: { code: input.value } });
-      session = res.session;
+      session = (await api(`${base}/verificar`, { method: 'POST', body: { code: input.value } })).session;
       await documentStep();
     } catch (ex) {
-      err.textContent = ex.message;
+      err.textContent = errMsg(ex);
       input.select();
     }
   });
@@ -95,12 +166,13 @@ function codeStep(notice = '') {
 
 // ---------- 2. Documento ----------
 async function documentStep() {
-  root.innerHTML = '<p class="muted">Cargando documento…</p>';
+  step = 'document';
+  root.innerHTML = `<p class="muted">${t.loadingDoc}</p>`;
   const headers = { 'X-Sign-Session': session };
   const [pdfRes, fieldData] = await Promise.all([api(`${base}/documento`, { raw: true, headers }), api(`${base}/campos`, { headers })]);
   data = fieldData;
   const bytes = await pdfRes.arrayBuffer();
-  root.innerHTML = `<p class="muted center">Completá los campos marcados. Al final, aceptá y tocá <strong>Finalizar</strong>.</p><div class="sign-pages" id="pages"></div>`;
+  root.innerHTML = `<p class="muted center" id="instructions">${t.instructions}</p><div class="sign-pages" id="pages"></div>`;
   await renderPdf(bytes, document.getElementById('pages'), { maxWidth: 880 });
   placeFields();
   renderBar();
@@ -124,15 +196,17 @@ function placeFields() {
       const input = document.createElement('input');
       input.type = 'text';
       input.maxLength = 500;
-      input.placeholder = f.label || (f.required ? 'Obligatorio' : 'Opcional');
-      input.setAttribute('aria-label', f.label || 'Texto');
+      input.value = values[f.id] || '';
+      input.placeholder = f.label || (f.required ? t.required : t.optional);
+      input.setAttribute('aria-label', f.label || t.text);
       input.addEventListener('input', () => { values[f.id] = input.value; update(); });
       el.appendChild(input);
     } else if (f.type === 'checkbox') {
       el = document.createElement('label');
       const input = document.createElement('input');
       input.type = 'checkbox';
-      input.setAttribute('aria-label', f.label || 'Casilla');
+      input.checked = values[f.id] === true;
+      input.setAttribute('aria-label', f.label || t.checkbox);
       input.addEventListener('change', () => { values[f.id] = input.checked; update(); });
       el.appendChild(input);
     } else if (f.type === 'signature' || f.type === 'initials') {
@@ -150,6 +224,7 @@ function placeFields() {
     wrap.appendChild(el);
   }
   fitFonts();
+  window.removeEventListener('resize', fitFonts);
   window.addEventListener('resize', fitFonts);
   update();
 }
@@ -173,25 +248,25 @@ function update() {
     if (done) el.classList.remove('missing');
     if (f.type === 'signature' || f.type === 'initials') {
       const img = f.type === 'signature' ? signature : initials;
-      el.innerHTML = img ? `<img alt="${f.type === 'signature' ? 'Tu firma' : 'Tus iniciales'}" src="${img}">` : (f.type === 'signature' ? 'Firmar aquí' : 'Iniciales');
+      el.innerHTML = img ? `<img alt="${f.type === 'signature' ? t.yourSignatureAlt : t.yourInitialsAlt}" src="${img}">` : (f.type === 'signature' ? t.signHere : t.initialsBox);
     }
   }
-  const total = data.fields.filter((f) => !['date', 'name', 'email'].includes(f.type)).length;
-  const done = data.fields.filter((f) => !['date', 'name', 'email'].includes(f.type) && fieldDone(f)).length;
+  const counted = data.fields.filter((f) => !['date', 'name', 'email'].includes(f.type));
+  const done = counted.filter(fieldDone).length;
   const p = document.getElementById('progress');
-  if (p) p.textContent = `${done} de ${total} campos completos`;
+  if (p) p.textContent = t.progress(done, counted.length);
   const barErr = document.getElementById('bar-err');
-  if (barErr && done === total && /campos/.test(barErr.textContent)) barErr.textContent = '';
+  if (barErr && done === counted.length && barErr.dataset.kind === 'fields') barErr.textContent = '';
 }
 
 function renderBar() {
   const bar = document.createElement('div');
   bar.className = 'sign-bar';
   bar.innerHTML = `<div class="wrap-app sign-bar-row">
-    <label class="consent"><input type="checkbox" id="consent"> Acepto firmar electrónicamente este documento y que mi firma electrónica tenga la misma validez que mi firma manuscrita.</label>
+    <label class="consent"><input type="checkbox" id="consent"> ${t.consent}</label>
     <div class="sign-bar-actions"><span class="progress" id="progress"></span>
-      <button class="btn btn-ghost" type="button" id="decline">Rechazar</button>
-      <button class="btn btn-primary" type="button" id="finish">Finalizar</button></div>
+      <button class="btn btn-ghost" type="button" id="decline">${t.decline}</button>
+      <button class="btn btn-primary" type="button" id="finish">${t.finish}</button></div>
   </div><p class="form-error wrap-app" role="alert" id="bar-err"></p>`;
   document.body.appendChild(bar);
   update();
@@ -207,54 +282,57 @@ async function finish() {
     const el = document.querySelector(`.sbox[data-id="${pending.id}"]`);
     el.classList.add('missing');
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    err.textContent = 'Completá los campos marcados antes de finalizar.';
+    err.dataset.kind = 'fields';
+    err.textContent = t.completeFields;
     return;
   }
   if (!document.getElementById('consent').checked) {
-    err.textContent = 'Marcá la casilla de aceptación para firmar.';
+    err.dataset.kind = 'consent';
+    err.textContent = t.acceptConsent;
     return;
   }
   const btn = document.getElementById('finish');
   btn.disabled = true;
-  btn.textContent = 'Firmando…';
+  btn.textContent = t.signing;
   try {
     await api(`${base}/firmar`, { method: 'POST', headers: { 'X-Sign-Session': session }, body: { signature, initials, values, consent: true } });
     document.querySelector('.sign-bar').remove();
-    card(`<span class="ic ic-shield" aria-hidden="true"></span><h1>¡Listo, firmaste!</h1>
-      <p class="muted">Cuando todas las partes firmen, te vamos a enviar por email el documento final con su sello digital y el certificado de finalización.</p>
-      <a class="btn btn-ghost" href="/">Conocé DocSure</a>`);
+    step = 'done';
+    card(`<span class="ic ic-shield" aria-hidden="true"></span><h1>${t.doneTitle}</h1><p class="muted">${t.doneText}</p><a class="btn btn-ghost" href="/">${t.knowDocsure}</a>`);
     window.scrollTo({ top: 0 });
   } catch (e) {
-    err.textContent = e.message;
+    err.dataset.kind = 'server';
+    err.textContent = errMsg(e);
     btn.disabled = false;
-    btn.textContent = 'Finalizar';
-    if (e.code === 'session_expired') setTimeout(identityStep, 1500);
+    btn.textContent = t.finish;
+    if (e.code === 'session_expired') setTimeout(() => { document.querySelector('.sign-bar')?.remove(); identityStep(); }, 1500);
   }
 }
 
 // ---------- Rechazo ----------
 function openDecline() {
   const dlg = document.createElement('dialog');
-  dlg.innerHTML = `<form class="modal" method="dialog" id="decline-form"><h2>Rechazar el documento</h2>
-    <p class="muted">El remitente va a recibir tu motivo y el sobre se cierra para todos.</p>
-    <label>Motivo<textarea id="reason" rows="3" maxlength="500" required></textarea></label>
+  dlg.innerHTML = `<form class="modal" method="dialog" id="decline-form"><h2>${t.declineTitle}</h2>
+    <p class="muted">${t.declineText}</p>
+    <label>${t.reason}<textarea id="reason" rows="3" maxlength="500" required></textarea></label>
     <p class="form-error" role="alert" id="decline-err"></p>
-    <div class="modal-actions"><button class="btn btn-ghost" value="cancel" type="button" id="decline-cancel">Volver</button><button class="btn btn-danger" type="submit">Rechazar</button></div></form>`;
+    <div class="modal-actions"><button class="btn btn-ghost" type="button" id="decline-cancel">${t.back}</button><button class="btn btn-danger" type="submit">${t.decline}</button></div></form>`;
   document.body.appendChild(dlg);
   dlg.showModal();
   dlg.querySelector('#decline-cancel').addEventListener('click', () => { dlg.close(); dlg.remove(); });
   dlg.querySelector('#decline-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const reason = dlg.querySelector('#reason').value.trim();
-    if (!reason) return void (dlg.querySelector('#decline-err').textContent = 'Contanos el motivo.');
+    if (!reason) return void (dlg.querySelector('#decline-err').textContent = t.reasonRequired);
     try {
       await api(`${base}/rechazar`, { method: 'POST', headers: { 'X-Sign-Session': session }, body: { reason } });
       dlg.close();
       dlg.remove();
       document.querySelector('.sign-bar')?.remove();
-      card('<h1>Rechazaste el documento</h1><p class="muted">Le avisamos al remitente. Ya podés cerrar esta ventana.</p>');
+      step = 'done';
+      card(`<h1>${t.declinedTitle}</h1><p class="muted">${t.declinedText}</p>`);
     } catch (ex) {
-      dlg.querySelector('#decline-err').textContent = ex.message;
+      dlg.querySelector('#decline-err').textContent = errMsg(ex);
     }
   });
 }
@@ -286,13 +364,14 @@ function trimmedPng(canvas) {
 
 function openPad(type) {
   const isSig = type === 'signature';
+  const initialsGuess = data.name.split(/\s+/).map((w) => w[0]).join('').toUpperCase();
   const dlg = document.createElement('dialog');
-  dlg.innerHTML = `<div class="modal"><h2>${isSig ? 'Tu firma' : 'Tus iniciales'}</h2>
-    <div class="modal-tabs" role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="draw">Dibujar</button><button type="button" role="tab" aria-selected="false" data-tab="type">Escribir</button></div>
-    <div data-panel="draw"><canvas class="pad" aria-label="Área para dibujar la firma"></canvas><p class="fine">Dibujá con el dedo o el mouse.</p></div>
-    <div data-panel="type" hidden><label>Escribí ${isSig ? 'tu nombre' : 'tus iniciales'}<input id="typed" maxlength="${isSig ? 60 : 6}" value="${esc(isSig ? data.name : data.name.split(/\s+/).map((w) => w[0]).join('').toUpperCase())}"></label><div class="typed-preview" id="typed-preview"></div></div>
+  dlg.innerHTML = `<div class="modal"><h2>${isSig ? t.yourSignature : t.yourInitials}</h2>
+    <div class="modal-tabs" role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="draw">${t.draw}</button><button type="button" role="tab" aria-selected="false" data-tab="type">${t.type}</button></div>
+    <div data-panel="draw"><canvas class="pad" aria-label="${t.padArea}"></canvas><p class="fine">${t.drawHint}</p></div>
+    <div data-panel="type" hidden><label>${isSig ? t.typeName : t.typeInitials}<input id="typed" maxlength="${isSig ? 60 : 6}" value="${esc(isSig ? data.name : initialsGuess)}"></label><div class="typed-preview" id="typed-preview"></div></div>
     <p class="form-error" role="alert" id="pad-err"></p>
-    <div class="modal-actions"><button class="btn btn-ghost" type="button" id="pad-clear">Borrar</button><button class="btn btn-ghost" type="button" id="pad-cancel">Cancelar</button><button class="btn btn-primary" type="button" id="pad-ok">Usar ${isSig ? 'esta firma' : 'estas iniciales'}</button></div></div>`;
+    <div class="modal-actions"><button class="btn btn-ghost" type="button" id="pad-clear">${t.clear}</button><button class="btn btn-ghost" type="button" id="pad-cancel">${t.cancel}</button><button class="btn btn-primary" type="button" id="pad-ok">${isSig ? t.useSignature : t.useInitials}</button></div></div>`;
   document.body.appendChild(dlg);
   dlg.showModal();
 
@@ -327,9 +406,9 @@ function openPad(type) {
   const syncPreview = () => { preview.textContent = typed.value; };
   typed.addEventListener('input', syncPreview);
   syncPreview();
-  dlg.querySelectorAll('[data-tab]').forEach((t) => t.addEventListener('click', () => {
-    mode = t.dataset.tab;
-    dlg.querySelectorAll('[data-tab]').forEach((o) => o.setAttribute('aria-selected', String(o === t)));
+  dlg.querySelectorAll('[data-tab]').forEach((tab) => tab.addEventListener('click', () => {
+    mode = tab.dataset.tab;
+    dlg.querySelectorAll('[data-tab]').forEach((o) => o.setAttribute('aria-selected', String(o === tab)));
     dlg.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== mode; });
   }));
   const close = () => { dlg.close(); dlg.remove(); };
@@ -354,7 +433,7 @@ function openPad(type) {
       tctx.fillText(typed.value.trim(), 20, 115, 860);
       png = trimmedPng(c);
     }
-    if (!png) return void (dlg.querySelector('#pad-err').textContent = isSig ? 'Dibujá o escribí tu firma.' : 'Dibujá o escribí tus iniciales.');
+    if (!png) return void (dlg.querySelector('#pad-err').textContent = isSig ? t.needSignature : t.needInitials);
     if (isSig) signature = png; else initials = png;
     close();
     update();

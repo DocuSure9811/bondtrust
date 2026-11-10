@@ -4,7 +4,7 @@ import net from 'node:net';
 import { randomToken } from '../security.js';
 import { HttpError } from '../validate.js';
 
-export const WEBHOOK_EVENTS = ['envelope.sent', 'recipient.viewed', 'recipient.signed', 'envelope.completed', 'envelope.declined', 'envelope.voided'];
+export const WEBHOOK_EVENTS = ['envelope.sent', 'recipient.viewed', 'recipient.signed', 'envelope.completed', 'envelope.declined', 'envelope.voided', 'envelope.expired'];
 const RETRY_DELAYS_MS = [0, 5_000, 30_000];
 
 function isPrivateIp(ip) {

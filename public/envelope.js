@@ -7,16 +7,23 @@ const EVENT_LABELS = {
   created: 'Sobre creado',
   sent: 'Sobre enviado',
   email_sent: 'Invitación enviada',
+  reminder_sent: 'Recordatorio enviado',
   viewed: 'Abrió el enlace',
   otp_sent: 'Se envió el código de verificación',
   otp_failed: 'Ingresó un código incorrecto',
   otp_verified: 'Verificó su identidad',
+  in_person_started: 'Firma en persona iniciada',
+  in_person_verified: 'Identidad atestiguada en persona',
   signed: 'Firmó el documento',
   declined: 'Rechazó el documento',
   resent: 'Se reenvió la invitación',
+  extended: 'Se extendió el vencimiento',
+  corrected: 'Sobre corregido',
   voided: 'Sobre anulado',
+  expired: 'Sobre vencido',
   completed: 'Sobre completado y sellado',
 };
+const LANG = { es: 'Español', en: 'English', pt: 'Português' };
 
 async function download(which, title) {
   const res = await api(`/api/sobres/${id}/${which}.pdf`, { raw: true });
@@ -28,18 +35,30 @@ async function download(which, title) {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
+function say(text, ok = false) {
+  const msg = document.getElementById('msg');
+  msg.className = ok ? 'form-ok' : 'form-error';
+  msg.textContent = text;
+}
+
 async function load() {
   const { envelope: e, recipients, events } = await api(`/api/sobres/${id}`);
+  if (e.status === 'draft') return location.replace(`/app/nuevo?id=${id}`);
   const byId = new Map(recipients.map((r) => [r.id, r]));
+  const canCorrect = ['sent', 'declined', 'expired', 'voided'].includes(e.status);
   document.title = `${e.title} | DocSure`;
   root.innerHTML = `
   <div class="detail-head">
     <div><a href="/app" class="small">← Mis documentos</a><h1>${esc(e.title)}</h1>${pill(e.status)}
-      <span class="muted small"> Enviado ${fmtDate(e.sent_at, true)}${e.completed_at ? ` · Completado ${fmtDate(e.completed_at, true)}` : ''}</span></div>
+      <span class="muted small"> Enviado ${fmtDate(e.sent_at, true)}${e.completed_at ? ` · Completado ${fmtDate(e.completed_at, true)}` : ''}${e.status === 'sent' && e.expires_at ? ` · Vence ${fmtDate(e.expires_at)}` : ''}</span>
+      <p class="muted small">Idioma: ${LANG[e.language] || 'Español'} · ${e.reminder_days ? `Recordatorios cada ${e.reminder_days} día(s)` : 'Sin recordatorios'}${e.corrected_from ? ` · <a href="/app/sobres/${esc(e.corrected_from)}">Corrige un sobre anterior</a>` : ''}</p></div>
     <div class="detail-actions">
       ${e.status === 'completed' ? '<button class="btn btn-primary" data-dl="final">Descargar firmado</button>' : ''}
       <button class="btn btn-ghost" data-dl="original">Descargar original</button>
-      ${e.status === 'sent' ? '<button class="btn btn-danger" id="void">Anular sobre</button>' : ''}
+      ${e.status === 'sent' ? '<button class="btn btn-ghost" id="extend">Extender vencimiento</button>' : ''}
+      ${canCorrect ? '<button class="btn btn-ghost" id="correct">Corregir</button>' : ''}
+      <button class="btn btn-ghost" id="save-tpl">Guardar como plantilla</button>
+      ${e.status === 'sent' ? '<button class="btn btn-danger" id="void">Anular</button>' : ''}
     </div>
   </div>
   <p class="form-error" role="alert" id="msg"></p>
@@ -47,8 +66,8 @@ async function load() {
     <section class="card"><h2>Destinatarios</h2><ul class="rlist">${recipients.map((r) => `
       <li><div><strong>${esc(r.name)}</strong><small>${esc(r.email)} · ${r.role === 'cc' ? 'Recibe copia' : `Firmante${e.sequential ? ` · orden ${r.routing_order}` : ''}`}</small>
         ${r.decline_reason ? `<small>Motivo: “${esc(r.decline_reason)}”</small>` : ''}</div>
-        <div>${r.role === 'signer' ? `<span class="status-pill status-${r.status === 'signed' ? 'completed' : r.status === 'declined' ? 'declined' : 'sent'}">${esc(RECIPIENT_STATUS[r.status])}</span>` : ''}
-        ${e.status === 'sent' && ['sent', 'viewed'].includes(r.status) ? `<button class="btn btn-ghost btn-sm" data-resend="${r.id}">Reenviar</button>` : ''}</div></li>`).join('')}</ul>
+        <div class="tpl-actions">${r.role === 'signer' ? `<span class="status-pill status-${r.status === 'signed' ? 'completed' : r.status === 'declined' ? 'declined' : 'sent'}">${esc(RECIPIENT_STATUS[r.status])}</span>` : ''}
+        ${e.status === 'sent' && ['sent', 'viewed'].includes(r.status) ? `<button class="btn btn-ghost btn-sm" data-resend="${r.id}">Reenviar</button><button class="btn btn-ghost btn-sm" data-inperson="${r.id}">Firmar en persona</button>` : ''}</div></li>`).join('')}</ul>
       ${e.final_sha256 ? `<p class="fine">Huella SHA-256 del documento final: <code class="hash">${esc(e.final_sha256)}</code></p>` : ''}
       <p class="fine">Huella SHA-256 del original: <code class="hash">${esc(e.original_sha256)}</code></p>
     </section>
@@ -56,30 +75,43 @@ async function load() {
       <li><time datetime="${esc(ev.created_at)}">${fmtDate(ev.created_at, true)}</time>${esc(EVENT_LABELS[ev.type] || ev.type)}${ev.recipient_id && byId.get(ev.recipient_id) ? ` · ${esc(byId.get(ev.recipient_id).name)}` : ''}</li>`).join('')}</ol></section>
   </div>`;
 
-  const msg = document.getElementById('msg');
-  root.querySelectorAll('[data-dl]').forEach((b) => b.addEventListener('click', () => download(b.dataset.dl, e.title).catch((err) => { msg.textContent = err.message; })));
-  root.querySelectorAll('[data-resend]').forEach((b) => b.addEventListener('click', async () => {
+  const on = (sel, fn) => root.querySelectorAll(sel).forEach((b) => b.addEventListener('click', () => fn(b).catch((err) => { say(err.message); b.disabled = false; })));
+  on('[data-dl]', (b) => download(b.dataset.dl, e.title));
+  on('[data-resend]', async (b) => {
     b.disabled = true;
-    try {
-      await api(`/api/sobres/${id}/destinatarios/${b.dataset.resend}/reenviar`, { method: 'POST' });
-      msg.className = 'form-ok';
-      msg.textContent = 'Invitación reenviada. El enlace anterior dejó de funcionar.';
-      await load();
-    } catch (err) {
-      msg.className = 'form-error';
-      msg.textContent = err.message;
-      b.disabled = false;
-    }
-  }));
-  const voidBtn = document.getElementById('void');
-  if (voidBtn) voidBtn.addEventListener('click', async () => {
-    if (!confirm('¿Anular el sobre? Los firmantes ya no podrán firmar.')) return;
-    try {
-      await api(`/api/sobres/${id}/anular`, { method: 'POST' });
-      await load();
-    } catch (err) {
-      msg.textContent = err.message;
-    }
+    await api(`/api/sobres/${id}/destinatarios/${b.dataset.resend}/reenviar`, { method: 'POST' });
+    await load();
+    say('Invitación reenviada. El enlace y el código anteriores dejaron de funcionar.', true);
+  });
+  on('[data-inperson]', async (b) => {
+    if (!confirm('Vas a abrir la firma en este dispositivo para que el firmante firme frente a vos. El enlace del email deja de funcionar. ¿Continuar?')) return;
+    b.disabled = true;
+    const { url } = await api(`/api/sobres/${id}/destinatarios/${b.dataset.inperson}/en-persona`, { method: 'POST' });
+    location.href = url;
+  });
+  on('#extend', async () => {
+    const days = prompt('¿Cuántos días más, contando desde hoy? (1 a 120)', '15');
+    if (!days) return;
+    await api(`/api/sobres/${id}/extender`, { method: 'POST', body: { days: Number(days) } });
+    await load();
+    say(`Vencimiento extendido ${days} días.`, true);
+  });
+  on('#correct', async () => {
+    const extra = e.status === 'sent' ? ' El sobre actual se anula (no consume tu cupo).' : '';
+    if (!confirm(`Se crea un borrador idéntico para que lo edites y lo vuelvas a enviar.${extra} ¿Continuar?`)) return;
+    const { id: newId } = await api(`/api/sobres/${id}/corregir`, { method: 'POST' });
+    location.href = `/app/nuevo?id=${newId}`;
+  });
+  on('#save-tpl', async () => {
+    const name = prompt('Nombre de la plantilla', e.title);
+    if (!name) return;
+    await api('/api/plantillas', { method: 'POST', body: { envelopeId: id, name } });
+    say('Plantilla guardada. La encontrás en Plantillas.', true);
+  });
+  on('#void', async () => {
+    if (!confirm('¿Anular el sobre? Los firmantes ya no podrán firmar. Los sobres anulados no consumen cupo.')) return;
+    await api(`/api/sobres/${id}/anular`, { method: 'POST' });
+    await load();
   });
 }
 

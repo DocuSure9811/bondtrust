@@ -151,6 +151,38 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 );
 CREATE INDEX IF NOT EXISTS webhook_deliveries_idx ON webhook_deliveries (webhook_id, id DESC);
 
+-- v0.4: plantillas, recordatorios, vencimiento, código de acceso, firma en persona, marca e idiomas
+ALTER TABLE envelopes DROP CONSTRAINT IF EXISTS envelopes_status_check;
+ALTER TABLE envelopes ADD CONSTRAINT envelopes_status_check CHECK (status IN ('draft', 'sent', 'completed', 'declined', 'voided', 'expired'));
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS language text NOT NULL DEFAULT 'es';
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS expire_days int NOT NULL DEFAULT 30;
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS reminder_days int NOT NULL DEFAULT 0;
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS corrected_from uuid;
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS template_id uuid;
+ALTER TABLE recipients ADD COLUMN IF NOT EXISTS access_code_hash text;
+ALTER TABLE recipients ADD COLUMN IF NOT EXISTS last_notified_at timestamptz;
+ALTER TABLE recipients ADD COLUMN IF NOT EXISTS reminders_sent int NOT NULL DEFAULT 0;
+ALTER TABLE recipients ADD COLUMN IF NOT EXISTS in_person_by uuid;
+CREATE UNIQUE INDEX IF NOT EXISTS recipients_access_code_idx ON recipients (access_code_hash) WHERE access_code_hash IS NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS brand_color text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS brand_logo bytea;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS brand_logo_type text;
+
+CREATE TABLE IF NOT EXISTS templates (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  message text NOT NULL DEFAULT '',
+  sequential boolean NOT NULL DEFAULT false,
+  language text NOT NULL DEFAULT 'es',
+  pdf bytea NOT NULL,
+  page_count int NOT NULL,
+  roles jsonb NOT NULL,
+  fields jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS templates_owner_idx ON templates (owner_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS emails (
   id bigserial PRIMARY KEY,
   envelope_id uuid REFERENCES envelopes(id) ON DELETE CASCADE,

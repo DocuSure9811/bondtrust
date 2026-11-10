@@ -41,7 +41,7 @@ function appShell(config, user, { title, body, scripts, active = 'docs' }) {
   const shell = `<div class="app">
   <header class="app-header"><div class="wrap-app app-header-row">
     <a class="logo" href="/app" aria-label="DocSure, mis documentos">${LOGO_SVG}<span>DocSure</span></a>
-    <nav class="app-nav" aria-label="Aplicación"><a href="/app"${active === 'docs' ? ' aria-current="page"' : ''}>Documentos</a><a href="/app/nuevo"${active === 'new' ? ' aria-current="page"' : ''}>Nuevo sobre</a><a href="/app/api"${active === 'api' ? ' aria-current="page"' : ''}>API</a></nav>
+    <nav class="app-nav" aria-label="Aplicación"><a href="/app"${active === 'docs' ? ' aria-current="page"' : ''}>Documentos</a><a href="/app/nuevo"${active === 'new' ? ' aria-current="page"' : ''}>Nuevo sobre</a><a href="/app/plantillas"${active === 'tpl' ? ' aria-current="page"' : ''}>Plantillas</a><a href="/app/api"${active === 'api' ? ' aria-current="page"' : ''}>API</a><a href="/app/ajustes"${active === 'settings' ? ' aria-current="page"' : ''}>Ajustes</a></nav>
     <div class="app-user"><span class="app-user-name">${escapeHtml(user.name)}</span><button class="btn btn-ghost btn-sm" type="button" id="logout">Salir</button></div>
   </div></header>
   ${body}
@@ -58,7 +58,7 @@ export function dashboardPage(config, user) {
   <div class="tabs" role="tablist" id="filters">
     <button role="tab" aria-selected="true" data-filter="all">Todos</button><button role="tab" aria-selected="false" data-filter="sent">En curso</button>
     <button role="tab" aria-selected="false" data-filter="completed">Completados</button><button role="tab" aria-selected="false" data-filter="draft">Borradores</button>
-    <button role="tab" aria-selected="false" data-filter="closed">Rechazados o anulados</button>
+    <button role="tab" aria-selected="false" data-filter="closed">Rechazados, anulados o vencidos</button>
   </div>
   <div id="list" class="env-list" aria-live="polite"><p class="muted">Cargando…</p></div>
 </div>`,
@@ -118,6 +118,13 @@ export function editorPage(config, user) {
   <section class="step" data-step="4" hidden>
     <h1>Revisá y enviá</h1>
     <div id="review" class="review"></div>
+    <div class="options-grid">
+      <label>Idioma para los firmantes<select id="opt-language"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option></select></label>
+      <label>Vence en<select id="opt-expire"><option value="7">7 días</option><option value="15">15 días</option><option value="30" selected>30 días</option><option value="60">60 días</option><option value="90">90 días</option><option value="120">120 días</option></select></label>
+      <label>Recordatorios<select id="opt-reminder"><option value="0">Sin recordatorios</option><option value="1">Cada día</option><option value="2" selected>Cada 2 días</option><option value="3">Cada 3 días</option><option value="5">Cada 5 días</option><option value="7">Cada 7 días</option></select></label>
+    </div>
+    <label class="switch"><input type="checkbox" id="opt-template"> Guardar también como plantilla</label>
+    <label id="opt-template-name-wrap" hidden>Nombre de la plantilla<input id="opt-template-name" maxlength="120"></label>
     <p class="form-error" role="alert" id="err4"></p>
     <div class="step-actions"><button class="btn btn-ghost" type="button" data-go="3">Atrás</button><button class="btn btn-primary btn-lg" type="button" id="send">Enviar para firmar</button></div>
   </section>
@@ -158,6 +165,64 @@ export function apiPage(config, user) {
 </div>`,
     scripts: ['/static/api-panel.js'],
   });
+}
+
+export function templatesPage(config, user) {
+  return appShell(config, user, {
+    title: 'Plantillas',
+    active: 'tpl',
+    body: `<div class="wrap-app app-main">
+  <div class="app-title-row"><h1>Plantillas</h1></div>
+  <p class="muted">Para crear una plantilla, abrí cualquier sobre y tocá <strong>Guardar como plantilla</strong>, o marcá la opción al enviarlo.</p>
+  <p class="form-error" role="alert" id="tpl-msg"></p>
+  <div id="tpl-list" class="env-list" aria-live="polite"><p class="muted">Cargando…</p></div>
+</div>`,
+    scripts: ['/static/templates.js'],
+  });
+}
+
+export function settingsPage(config, user) {
+  return appShell(config, user, {
+    title: 'Ajustes',
+    active: 'settings',
+    body: `<div class="wrap-app app-main">
+  <div class="app-title-row"><h1>Ajustes</h1></div>
+  <section class="card"><h2>Tu cuenta</h2>
+    <form id="account-form" novalidate>
+      <label>Nombre<input name="name" maxlength="120" required></label>
+      <label>Empresa <span class="muted">(se muestra como remitente en tus emails)</span><input name="company" maxlength="120"></label>
+      <label>Color de marca<input name="brand_color" type="color" class="color-input"></label>
+      <p class="form-error" role="alert" id="account-msg"></p>
+      <button class="btn btn-primary" type="submit">Guardar</button>
+    </form>
+  </section>
+  <section class="card"><h2>Logo</h2>
+    <p class="muted small">PNG o JPG de hasta 200 KB. Aparece en tus emails y en la pantalla de firma.</p>
+    <div class="logo-preview" id="logo-preview"></div>
+    <input id="logo-file" type="file" accept="image/png,image/jpeg">
+    <p class="form-error" role="alert" id="logo-msg"></p>
+    <button class="btn btn-ghost btn-sm" type="button" id="logo-delete" hidden>Quitar logo</button>
+  </section>
+  <section class="card"><h2>Plan</h2><p id="plan-info" class="muted">Cargando…</p><a class="link-strong" href="/precios">Ver planes</a></section>
+</div>`,
+    scripts: ['/static/settings.js'],
+  });
+}
+
+export function accessPage(config) {
+  const body = `<section class="auth"><div class="auth-card">
+  <a class="logo" href="/" aria-label="DocSure, inicio">${LOGO_SVG}<span>DocSure</span></a>
+  <h1>Firmar con código de acceso</h1>
+  <p class="muted">Escribí el código de 12 caracteres que figura en tu invitación. Así llegás a tu documento sin tocar enlaces del email.</p>
+  <p class="muted small" lang="en">Sign with your access code · Assinar com código de acesso</p>
+  <form id="access-form" novalidate>
+    <label for="access-code">Código de acceso</label>
+    <input id="access-code" class="otp-input access-input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="14" placeholder="XXXX-XXXX-XXXX" required>
+    <p class="form-error" role="alert" id="access-err"></p>
+    <button class="btn btn-primary btn-block btn-lg" type="submit">Continuar</button>
+  </form>
+</div></section>`;
+  return page({ config, path: '/acceder', title: 'Firmar con código de acceso', description: 'Entrá a tu documento de DocSure escribiendo el código de acceso de tu invitación, sin tocar enlaces del email.', body, chrome: false, bodyClass: 'auth-body', scripts: ['/static/access.js'] });
 }
 
 export function connectPage(config, user) {

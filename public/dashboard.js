@@ -8,7 +8,7 @@ let filter = 'all';
 
 function matches(e) {
   if (filter === 'all') return true;
-  if (filter === 'closed') return e.status === 'declined' || e.status === 'voided';
+  if (filter === 'closed') return ['declined', 'voided', 'expired'].includes(e.status);
   return e.status === filter;
 }
 
@@ -44,6 +44,12 @@ try {
   const pending = envelopes.filter((e) => e.status === 'sent').length;
   const done = envelopes.filter((e) => e.status === 'completed').length;
   const limit = me.plan.monthlyEnvelopes;
+  const used = me.usage.envelopesThisMonth;
+  const pct = limit === null ? 0 : Math.min(100, Math.round((used / limit) * 100));
+  stats.insertAdjacentHTML('beforebegin', `<section class="usage" aria-label="Uso del plan">
+    <strong>Plan ${esc(me.plan.name)}</strong> · ${limit === null ? `${used} sobres enviados este mes (ilimitados)` : `${used} de ${limit} sobres usados este mes`}
+    ${limit === null ? '' : `<div class="usage-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${limit}" aria-valuenow="${used}"><span style="width:${pct}%"></span></div>`}
+    <span class="muted small">Los sobres anulados o corregidos no cuentan. El cupo se renueva el día 1 de cada mes.</span></section>`);
   stats.innerHTML = [
     [pending, 'Esperando firmas'],
     [done, 'Completados'],

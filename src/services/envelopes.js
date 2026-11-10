@@ -1,5 +1,6 @@
+import crypto from 'node:crypto';
 import { withTransaction } from '../db.js';
-import { templates } from '../mail.js';
+import { formatLongDate, langOf, templates } from '../mail.js';
 import { buildFinalPdf, inspectPdf } from '../pdf/final.js';
 import { planOf } from '../plans.js';
 import { hmac, maskEmail, newOtp, randomToken, safeEqualHex, sha256Hex } from '../security.js';
@@ -13,7 +14,9 @@ function emit(ctx, envelopeId, type, extra) {
     .catch((err) => console.error('Webhook no emitido:', err.message));
 }
 
-const LINK_DAYS = 30;
+const ACCESS_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ23456789';
+const REMINDER_OPTIONS = [0, 1, 2, 3, 5, 7];
+const MAX_REMINDERS = 5;
 const OTP_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_RESEND_SECONDS = 30;
@@ -33,8 +36,38 @@ function shortDate(d) {
   return new Date(d).toISOString().slice(0, 10).split('-').reverse().join('/');
 }
 
-function formatDate(d) {
-  return new Date(d).toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' });
+/** Código de acceso de 12 caracteres (~58 bits) para entrar sin tocar enlaces: XXXX-XXXX-XXXX. */
+function newAccessCode() {
+  let out = '';
+  for (let i = 0; i < 12; i += 1) out += ACCESS_ALPHABET[crypto.randomInt(ACCESS_ALPHABET.length)];
+  return out;
+}
+
+const formatCode = (c) => `${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8)}`;
+
+/** Datos del sobre y de la marca del remitente para los emails. */
+const ENV_MAIL_SQL = `SELECT e.id, e.title, e.message, e.status, e.sequential, e.expires_at, e.language, e.owner_id,
+       u.name AS owner_name, u.company AS owner_company, u.brand_color, (u.brand_logo IS NOT NULL) AS has_logo
+  FROM envelopes e JOIN users u ON u.id = e.owner_id WHERE e.id = $1`;
+
+export function brandOf(ctx, row) {
+  return {
+    name: row.owner_company || 'DocSure',
+    color: row.brand_color || '#0e7c66',
+    logoUrl: row.has_logo ? `${ctx.config.appUrl}/marca/${row.owner_id}` : null,
+  };
+}
+
+/** Genera enlace y código de acceso nuevos (invalida los anteriores) y los devuelve en claro una sola vez. */
+async function issueCredentials(ctx, db, recipientId, expiresAt, extraSet = '') {
+  const token = randomToken();
+  const code = newAccessCode();
+  await db.query(
+    `UPDATE recipients SET token_hash = $2, access_code_hash = $3, token_expires_at = $4, last_notified_at = now()${extraSet}
+      WHERE id = $1`,
+    [recipientId, hmac(ctx.config.tokenSecret, `link:${token}`), hmac(ctx.config.tokenSecret, `access:${code}`), expiresAt],
+  );
+  return { token, code };
 }
 
 // ---------- Remitente ----------
@@ -56,7 +89,8 @@ async function ownedEnvelope(db, ownerId, id, { lock = false } = {}) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(404, 'Sobre no encontrado.', 'not_found');
   const { rows } = await db.query(
     `SELECT id, owner_id, title, message, status, sequential, page_count, original_sha256, final_sha256,
-            send_idempotency_key, expires_at, sent_at, completed_at, created_at
+            send_idempotency_key, expires_at, sent_at, completed_at, created_at, language, expire_days,
+            reminder_days, corrected_from, template_id
        FROM envelopes WHERE id = $1 AND owner_id = $2 ${lock ? 'FOR UPDATE' : ''}`,
     [id, ownerId],
   );
@@ -68,6 +102,10 @@ export async function saveDraft(ctx, ownerId, id, body) {
   const title = cleanText(body.title, { max: 160, field: 'el nombre del documento' });
   const message = cleanText(body.message ?? '', { max: 1000, field: 'el mensaje', required: false });
   const sequential = body.sequential === true;
+  const language = langOf(body.language);
+  const expireDays = body.expire_days === undefined || body.expire_days === null ? 30 : cleanNumber(body.expire_days, { min: 1, max: 120, field: 'El vencimiento' });
+  const reminderDays = body.reminder_days === undefined || body.reminder_days === null ? 0 : Number(body.reminder_days);
+  if (!REMINDER_OPTIONS.includes(reminderDays)) throw new HttpError(400, 'Frecuencia de recordatorio inválida (0, 1, 2, 3, 5 o 7 días).', 'validation');
   const recipientsIn = Array.isArray(body.recipients) ? body.recipients : [];
   const fieldsIn = Array.isArray(body.fields) ? body.fields : [];
   if (recipientsIn.length > 50) throw new HttpError(400, 'Máximo 50 destinatarios.', 'validation');
@@ -133,7 +171,11 @@ export async function saveDraft(ctx, ownerId, id, body) {
         [id, idByKey.get(f.recipientKey), f.type, f.page, f.x, f.y, f.w, f.h, f.required, f.label],
       );
     }
-    await db.query('UPDATE envelopes SET title = $2, message = $3, sequential = $4, updated_at = now() WHERE id = $1', [id, title, message, sequential]);
+    await db.query(
+      `UPDATE envelopes SET title = $2, message = $3, sequential = $4, language = $5, expire_days = $6, reminder_days = $7, updated_at = now()
+        WHERE id = $1`,
+      [id, title, message, sequential, language, Math.round(expireDays), reminderDays],
+    );
     return { ok: true };
   });
 }
@@ -141,7 +183,8 @@ export async function saveDraft(ctx, ownerId, id, body) {
 export async function monthlyUsage(db, ownerId) {
   const { rows } = await db.query(
     `SELECT count(*)::int AS n FROM envelopes
-      WHERE owner_id = $1 AND sent_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
+      WHERE owner_id = $1 AND status <> 'voided'
+        AND sent_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
     [ownerId],
   );
   return rows[0].n;
@@ -170,7 +213,7 @@ export async function sendEnvelope(ctx, owner, id, idempotencyKey, meta) {
       throw new HttpError(402, `Llegaste al límite de ${limit} sobres de este mes en tu plan. Pasá a un plan superior para seguir enviando.`, 'quota');
     }
     await db.query(
-      `UPDATE envelopes SET status = 'sent', sent_at = now(), expires_at = now() + interval '${LINK_DAYS} days',
+      `UPDATE envelopes SET status = 'sent', sent_at = now(), expires_at = now() + make_interval(days => expire_days),
               send_idempotency_key = $2, updated_at = now() WHERE id = $1`,
       [id, key],
     );
@@ -186,11 +229,7 @@ export async function sendEnvelope(ctx, owner, id, idempotencyKey, meta) {
 
 /** Envía la invitación a los firmantes de la etapa actual. Cada firmante se invita una sola vez. */
 export async function dispatchStage(ctx, envelopeId) {
-  const { rows: [env] } = await ctx.pool.query(
-    `SELECT e.id, e.title, e.message, e.status, e.sequential, e.expires_at, u.name AS owner_name
-       FROM envelopes e JOIN users u ON u.id = e.owner_id WHERE e.id = $1`,
-    [envelopeId],
-  );
+  const { rows: [env] } = await ctx.pool.query(ENV_MAIL_SQL, [envelopeId]);
   if (!env || env.status !== 'sent') return;
   const { rows: signers } = await ctx.pool.query(
     `SELECT id, name, email, status, routing_order FROM recipients
@@ -201,28 +240,29 @@ export async function dispatchStage(ctx, envelopeId) {
   if (pending.length === 0) return;
   const stage = env.sequential ? pending.filter((s) => s.routing_order === pending[0].routing_order) : pending;
   for (const s of stage) {
-    const token = randomToken();
-    const { rowCount } = await ctx.pool.query(
-      `UPDATE recipients SET token_hash = $2, token_expires_at = $3, status = 'sent'
-        WHERE id = $1 AND status = 'created'`,
-      [s.id, hmac(ctx.config.tokenSecret, `link:${token}`), env.expires_at],
-    );
+    const { rowCount } = await ctx.pool.query(`UPDATE recipients SET status = 'sent' WHERE id = $1 AND status = 'created'`, [s.id]);
     if (rowCount === 0) continue;
-    await inviteRecipient(ctx, env, s, token, `invite:${s.id}`);
+    const creds = await issueCredentials(ctx, ctx.pool, s.id, env.expires_at);
+    await inviteRecipient(ctx, env, s, creds, `invite:${s.id}`);
   }
 }
 
-async function inviteRecipient(ctx, env, recipient, token, dedupeKey) {
+async function inviteRecipient(ctx, env, recipient, { token, code }, dedupeKey, { reminder = false } = {}) {
   const mail = templates.signRequest({
+    lang: env.language,
+    brand: brandOf(ctx, env),
     senderName: env.owner_name,
     recipientName: recipient.name,
     title: env.title,
     message: env.message,
     url: `${ctx.config.appUrl}/firmar/${token}`,
-    expiresAt: formatDate(env.expires_at),
+    accessCode: formatCode(code),
+    accessUrl: `${ctx.config.appUrl.replace(/^https?:\/\//, '')}/acceder`,
+    expiresAt: formatLongDate(env.expires_at, env.language),
+    reminder,
   });
-  await ctx.mailer.send({ ...mail, to: recipient.email, kind: 'invite', envelopeId: env.id, dedupeKey });
-  await addEvent(ctx.pool, env.id, 'email_sent', { recipientId: recipient.id });
+  await ctx.mailer.send({ ...mail, to: recipient.email, kind: reminder ? 'reminder' : 'invite', envelopeId: env.id, dedupeKey });
+  await addEvent(ctx.pool, env.id, reminder ? 'reminder_sent' : 'email_sent', { recipientId: recipient.id });
 }
 
 export async function resendInvite(ctx, ownerId, envelopeId, recipientId) {
@@ -239,17 +279,10 @@ export async function resendInvite(ctx, ownerId, envelopeId, recipientId) {
   if (r.last_sent && Date.now() - new Date(r.last_sent).getTime() < 60_000) {
     throw new HttpError(429, 'Esperá un minuto antes de reenviar.', 'rate_limited');
   }
-  const token = randomToken();
-  await ctx.pool.query(
-    `UPDATE recipients SET token_hash = $2, token_expires_at = $3, otp_hash = NULL, sign_session_hash = NULL WHERE id = $1`,
-    [r.id, hmac(ctx.config.tokenSecret, `link:${token}`), env.expires_at],
-  );
-  const { rows: [full] } = await ctx.pool.query(
-    'SELECT e.id, e.title, e.message, e.expires_at, u.name AS owner_name FROM envelopes e JOIN users u ON u.id = e.owner_id WHERE e.id = $1',
-    [envelopeId],
-  );
+  const creds = await issueCredentials(ctx, ctx.pool, r.id, env.expires_at, ', otp_hash = NULL, sign_session_hash = NULL, in_person_by = NULL');
+  const { rows: [full] } = await ctx.pool.query(ENV_MAIL_SQL, [envelopeId]);
   await addEvent(ctx.pool, envelopeId, 'resent', { recipientId: r.id });
-  await inviteRecipient(ctx, full, r, token, `resend:${r.id}:${randomToken(8)}`);
+  await inviteRecipient(ctx, full, r, creds, `resend:${r.id}:${randomToken(8)}`);
   return { ok: true };
 }
 
@@ -258,7 +291,7 @@ export async function voidEnvelope(ctx, ownerId, id, meta) {
     const env = await ownedEnvelope(db, ownerId, id, { lock: true });
     if (env.status !== 'sent') throw new HttpError(409, 'Solo se puede anular un sobre en curso.', 'not_sent');
     await db.query(`UPDATE envelopes SET status = 'voided', updated_at = now() WHERE id = $1`, [id]);
-    await db.query('UPDATE recipients SET token_hash = NULL, sign_session_hash = NULL WHERE envelope_id = $1', [id]);
+    await db.query('UPDATE recipients SET token_hash = NULL, access_code_hash = NULL, sign_session_hash = NULL WHERE envelope_id = $1', [id]);
     await addEvent(db, id, 'voided', meta);
   });
   emit(ctx, id, 'envelope.voided');
@@ -316,19 +349,23 @@ export async function ownerPdf(ctx, ownerId, id, which) {
 // ---------- Firmante ----------
 
 export async function resolveToken(ctx, token, { forUpdate = false, db = ctx.pool } = {}) {
-  if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{20,100}$/.test(token)) {
+  const code = typeof token === 'string' ? token.toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+  const isCode = typeof token === 'string' && token.length <= 20 && code.length === 12;
+  if (!isCode && (typeof token !== 'string' || !/^[A-Za-z0-9_-]{20,100}$/.test(token))) {
     throw new HttpError(404, 'El enlace no es válido.', 'invalid_link');
   }
   const { rows: [r] } = await db.query(
-    `SELECT r.*, e.title, e.status AS envelope_status, e.page_count, u.name AS owner_name
+    `SELECT r.*, e.title, e.status AS envelope_status, e.page_count, e.language, e.owner_id,
+            u.name AS owner_name, u.company AS owner_company, u.brand_color, (u.brand_logo IS NOT NULL) AS has_logo
        FROM recipients r JOIN envelopes e ON e.id = r.envelope_id JOIN users u ON u.id = e.owner_id
-      WHERE r.token_hash = $1 ${forUpdate ? 'FOR UPDATE OF r' : ''}`,
-    [hmac(ctx.config.tokenSecret, `link:${token}`)],
+      WHERE ${isCode ? 'r.access_code_hash' : 'r.token_hash'} = $1 ${forUpdate ? 'FOR UPDATE OF r' : ''}`,
+    [hmac(ctx.config.tokenSecret, isCode ? `access:${code}` : `link:${token}`)],
   );
   if (!r) throw new HttpError(404, 'El enlace no es válido o fue reemplazado por uno nuevo.', 'invalid_link');
   if (r.token_used_at || r.status === 'signed') throw new HttpError(410, 'Este enlace ya fue utilizado. Si necesitás el documento, revisá el email de finalización.', 'link_used');
   if (r.status === 'declined') throw new HttpError(410, 'Rechazaste firmar este documento.', 'link_used');
   if (r.envelope_status === 'voided') throw new HttpError(410, 'El remitente anuló este sobre.', 'voided');
+  if (r.envelope_status === 'expired') throw new HttpError(410, 'El sobre venció. Pedile al remitente que lo vuelva a enviar.', 'expired');
   if (r.envelope_status !== 'sent') throw new HttpError(410, 'Este sobre ya no admite firmas.', 'closed');
   if (new Date(r.token_expires_at) < new Date()) throw new HttpError(410, 'El enlace venció. Pedile al remitente que te lo reenvíe.', 'expired');
   return r;
@@ -349,6 +386,9 @@ export async function openSigning(ctx, token, meta) {
     recipientName: r.name,
     emailMasked: maskEmail(r.email),
     pageCount: r.page_count,
+    language: langOf(r.language),
+    brand: brandOf(ctx, r),
+    inPerson: Boolean(r.in_person_by),
   };
 }
 
@@ -363,7 +403,7 @@ export async function sendOtp(ctx, token, meta) {
             otp_sent_at = now(), otp_attempts = 0 WHERE id = $1`,
     [r.id, hmac(ctx.config.tokenSecret, `otp:${r.id}:${code}`)],
   );
-  const mail = templates.otp({ recipientName: r.name, code, title: r.title });
+  const mail = templates.otp({ lang: r.language, brand: brandOf(ctx, r), recipientName: r.name, code, title: r.title });
   await ctx.mailer.send({ ...mail, to: r.email, kind: 'otp', envelopeId: r.envelope_id, dedupeKey: `otp:${r.id}:${randomToken(8)}`, sensitive: true });
   await addEvent(ctx.pool, r.envelope_id, 'otp_sent', { recipientId: r.id, ...meta });
   return { ok: true, emailMasked: maskEmail(r.email) };
@@ -504,7 +544,7 @@ export async function completeEnvelope(ctx, envelopeId) {
     [envelopeId],
   );
   if (!envelope || envelope.status !== 'sent') return;
-  const { rows: [owner] } = await ctx.pool.query('SELECT name, email FROM users WHERE id = $1', [envelope.owner_id]);
+  const { rows: [owner] } = await ctx.pool.query('SELECT id, name, email FROM users WHERE id = $1', [envelope.owner_id]);
   const { rows: recipients } = await ctx.pool.query('SELECT * FROM recipients WHERE envelope_id = $1 ORDER BY position', [envelopeId]);
   const { rows: fields } = await ctx.pool.query('SELECT type, page, x, y, w, h, value FROM fields WHERE envelope_id = $1', [envelopeId]);
   const { rows: events } = await ctx.pool.query('SELECT type, recipient_id, ip, created_at FROM events WHERE envelope_id = $1 ORDER BY id', [envelopeId]);
@@ -536,10 +576,12 @@ export async function completeEnvelope(ctx, envelopeId) {
   if (!done) return;
   emit(ctx, envelopeId, 'envelope.completed', { final_sha256: sha256Hex(finalPdf) });
 
+  const { rows: [mailEnv] } = await ctx.pool.query(ENV_MAIL_SQL, [envelopeId]);
+  const brand = brandOf(ctx, mailEnv);
   for (const r of recipients) {
     const token = randomToken();
     await ctx.pool.query('UPDATE recipients SET download_token_hash = $2 WHERE id = $1', [r.id, hmac(ctx.config.tokenSecret, `dl:${token}`)]);
-    const mail = templates.completed({ recipientName: r.name, title: envelope.title, url: `${ctx.config.appUrl}/documento/${token}` });
+    const mail = templates.completed({ lang: mailEnv.language, brand, recipientName: r.name, title: envelope.title, url: `${ctx.config.appUrl}/documento/${token}` });
     await ctx.mailer.send({ ...mail, to: r.email, kind: 'completed', envelopeId, dedupeKey: `completed:${r.id}` });
   }
   const ownerMail = templates.completed({ recipientName: owner.name, title: envelope.title, url: `${ctx.config.appUrl}/app/sobres/${envelopeId}` });
@@ -642,7 +684,10 @@ export async function createFromApi(ctx, owner, body, idempotencyKey, meta) {
         return { recipientKey: `r${idx}`, type: f.type, page: f.page, x: f.x, y: f.y, w: f.width, h: f.height, required: f.required, label: f.label };
       })
       : autoFields(recipients, pageCount);
-    await saveDraft(ctx, owner.id, id, { title: body.title, message: body.message, sequential: body.sequential === true, recipients, fields });
+    await saveDraft(ctx, owner.id, id, {
+      title: body.title, message: body.message, sequential: body.sequential === true, recipients, fields,
+      language: body.language, expire_days: body.expire_days, reminder_days: body.reminder_days,
+    });
     if (body.send !== false) await sendEnvelope(ctx, owner, id, key || randomToken(16), meta);
   } catch (err) {
     await ctx.pool.query(`DELETE FROM envelopes WHERE id = $1 AND status = 'draft'`, [id]);
@@ -650,4 +695,137 @@ export async function createFromApi(ctx, owner, body, idempotencyKey, meta) {
     throw err;
   }
   return { replay: false, envelope: await apiEnvelope(ctx, owner.id, id) };
+}
+
+// ---------- Corrección, vencimiento, firma en persona y tareas programadas ----------
+
+/** Copia un sobre como borrador nuevo (documento, destinatarios y campos). */
+async function cloneAsDraft(db, src, correctedFrom) {
+  const { rows: [created] } = await db.query(
+    `INSERT INTO envelopes (owner_id, title, message, sequential, language, expire_days, reminder_days,
+                            original_pdf, original_sha256, page_count, corrected_from, template_id)
+     SELECT owner_id, title, message, sequential, language, expire_days, reminder_days,
+            original_pdf, original_sha256, page_count, $2, template_id FROM envelopes WHERE id = $1 RETURNING id`,
+    [src, correctedFrom],
+  );
+  const { rows: recips } = await db.query('SELECT id, position, name, email, role, routing_order FROM recipients WHERE envelope_id = $1 ORDER BY position', [src]);
+  const map = new Map();
+  for (const r of recips) {
+    const { rows: [n] } = await db.query(
+      'INSERT INTO recipients (envelope_id, position, name, email, role, routing_order) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [created.id, r.position, r.name, r.email, r.role, r.routing_order],
+    );
+    map.set(r.id, n.id);
+  }
+  const { rows: fields } = await db.query('SELECT recipient_id, type, page, x, y, w, h, required, label FROM fields WHERE envelope_id = $1', [src]);
+  for (const f of fields) {
+    await db.query(
+      'INSERT INTO fields (envelope_id, recipient_id, type, page, x, y, w, h, required, label) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+      [created.id, map.get(f.recipient_id), f.type, f.page, f.x, f.y, f.w, f.h, f.required, f.label],
+    );
+  }
+  await addEvent(db, created.id, 'created', { data: { corrected_from: correctedFrom } });
+  return created.id;
+}
+
+/** Corregir: anula el sobre en curso (los anulados no consumen cupo) y crea un borrador idéntico para editar y reenviar. */
+export async function correctEnvelope(ctx, ownerId, id, meta) {
+  let voided = false;
+  const newId = await withTransaction(ctx.pool, async (db) => {
+    const env = await ownedEnvelope(db, ownerId, id, { lock: true });
+    if (!['sent', 'declined', 'expired', 'voided'].includes(env.status)) {
+      throw new HttpError(409, 'Solo se pueden corregir sobres enviados, rechazados, vencidos o anulados.', 'not_correctable');
+    }
+    if (env.status === 'sent') {
+      await db.query(`UPDATE envelopes SET status = 'voided', updated_at = now() WHERE id = $1`, [id]);
+      await db.query('UPDATE recipients SET token_hash = NULL, access_code_hash = NULL, sign_session_hash = NULL WHERE envelope_id = $1', [id]);
+      voided = true;
+    }
+    await addEvent(db, id, 'corrected', meta);
+    return cloneAsDraft(db, id, id);
+  });
+  if (voided) emit(ctx, id, 'envelope.voided', { corrected_by: newId });
+  return { id: newId };
+}
+
+export async function extendExpiration(ctx, ownerId, id, days, meta) {
+  const d = Math.round(cleanNumber(days, { min: 1, max: 120, field: 'Los días' }));
+  return withTransaction(ctx.pool, async (db) => {
+    const env = await ownedEnvelope(db, ownerId, id, { lock: true });
+    if (env.status !== 'sent') throw new HttpError(409, 'Solo se puede extender un sobre en curso.', 'not_sent');
+    const { rows: [u] } = await db.query('UPDATE envelopes SET expires_at = now() + make_interval(days => $2), updated_at = now() WHERE id = $1 RETURNING expires_at', [id, d]);
+    await db.query('UPDATE recipients SET token_expires_at = $2 WHERE envelope_id = $1 AND token_hash IS NOT NULL', [id, u.expires_at]);
+    await addEvent(db, id, 'extended', { ...meta, data: { days: d } });
+    return { expires_at: u.expires_at };
+  });
+}
+
+/** Firma en persona: el remitente abre la firma en su dispositivo y su sesión atestigua la identidad. */
+export async function startInPerson(ctx, ownerId, envelopeId, recipientId) {
+  const env = await ownedEnvelope(ctx.pool, ownerId, envelopeId);
+  if (env.status !== 'sent') throw new HttpError(409, 'Solo se puede firmar en persona un sobre en curso.', 'not_sent');
+  if (!/^[0-9a-f-]{36}$/i.test(recipientId)) throw new HttpError(404, 'Destinatario no encontrado.', 'not_found');
+  const { rows: [r] } = await ctx.pool.query(`SELECT id, status FROM recipients WHERE id = $1 AND envelope_id = $2 AND role = 'signer'`, [recipientId, envelopeId]);
+  if (!r) throw new HttpError(404, 'Destinatario no encontrado.', 'not_found');
+  if (!['sent', 'viewed'].includes(r.status)) throw new HttpError(409, 'Este firmante no tiene una firma pendiente en este momento.', 'not_pending');
+  const creds = await issueCredentials(ctx, ctx.pool, r.id, env.expires_at, ', otp_hash = NULL, sign_session_hash = NULL');
+  await ctx.pool.query('UPDATE recipients SET in_person_by = $2 WHERE id = $1', [r.id, ownerId]);
+  await addEvent(ctx.pool, envelopeId, 'in_person_started', { recipientId: r.id });
+  return { url: `${ctx.config.appUrl}/firmar/${creds.token}` };
+}
+
+export async function inPersonSession(ctx, token, user, meta) {
+  const r = await resolveToken(ctx, token);
+  if (!user || !r.in_person_by || r.in_person_by !== user.id) {
+    throw new HttpError(403, 'La firma en persona requiere la sesión del remitente en este dispositivo.', 'in_person_forbidden');
+  }
+  const session = randomToken();
+  await ctx.pool.query(
+    `UPDATE recipients SET verified_at = now(), sign_session_hash = $2,
+            sign_session_expires_at = now() + interval '${SIGN_SESSION_MINUTES} minutes' WHERE id = $1`,
+    [r.id, hmac(ctx.config.tokenSecret, `sess:${session}`)],
+  );
+  await addEvent(ctx.pool, r.envelope_id, 'in_person_verified', { recipientId: r.id, ...meta });
+  return { session };
+}
+
+/** Vence sobres pasados de fecha y envía recordatorios. Seguro en paralelo: cada paso se reclama con un UPDATE. */
+export async function runScheduler(ctx) {
+  const out = { expired: 0, reminders: 0 };
+  const { rows: expired } = await ctx.pool.query(
+    `UPDATE envelopes SET status = 'expired', updated_at = now() WHERE status = 'sent' AND expires_at < now() RETURNING id, owner_id, title`,
+  );
+  for (const env of expired) {
+    await ctx.pool.query('UPDATE recipients SET token_hash = NULL, access_code_hash = NULL, sign_session_hash = NULL WHERE envelope_id = $1', [env.id]);
+    await addEvent(ctx.pool, env.id, 'expired');
+    const { rows: [owner] } = await ctx.pool.query('SELECT name, email FROM users WHERE id = $1', [env.owner_id]);
+    const mail = templates.expired({ ownerName: owner.name, title: env.title, url: `${ctx.config.appUrl}/app/sobres/${env.id}` });
+    await ctx.mailer.send({ ...mail, to: owner.email, kind: 'expired', envelopeId: env.id, dedupeKey: `expired:${env.id}` });
+    emit(ctx, env.id, 'envelope.expired');
+    out.expired += 1;
+  }
+
+  const { rows: due } = await ctx.pool.query(
+    `SELECT r.id, r.name, r.email, r.envelope_id FROM recipients r JOIN envelopes e ON e.id = r.envelope_id
+      WHERE e.status = 'sent' AND e.reminder_days > 0 AND r.role = 'signer' AND r.status IN ('sent', 'viewed')
+        AND r.in_person_by IS NULL AND r.reminders_sent < $1
+        AND r.last_notified_at < now() - make_interval(days => e.reminder_days)
+      LIMIT 200`,
+    [MAX_REMINDERS],
+  );
+  for (const r of due) {
+    const { rows: [claimed] } = await ctx.pool.query(
+      `UPDATE recipients rr SET reminders_sent = rr.reminders_sent + 1, last_notified_at = now()
+         FROM envelopes e WHERE rr.id = $1 AND e.id = rr.envelope_id AND e.status = 'sent'
+          AND rr.last_notified_at < now() - make_interval(days => e.reminder_days)
+       RETURNING rr.reminders_sent, e.expires_at`,
+      [r.id],
+    );
+    if (!claimed) continue;
+    const creds = await issueCredentials(ctx, ctx.pool, r.id, claimed.expires_at, ', otp_hash = NULL, sign_session_hash = NULL');
+    const { rows: [env] } = await ctx.pool.query(ENV_MAIL_SQL, [r.envelope_id]);
+    await inviteRecipient(ctx, env, r, creds, `reminder:${r.id}:${claimed.reminders_sent}`, { reminder: true });
+    out.reminders += 1;
+  }
+  return out;
 }

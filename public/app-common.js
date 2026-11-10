@@ -36,6 +36,7 @@ export const STATUS = {
   completed: 'Completado',
   declined: 'Rechazado',
   voided: 'Anulado',
+  expired: 'Vencido',
 };
 
 export const RECIPIENT_STATUS = {
