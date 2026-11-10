@@ -5,6 +5,8 @@ const accountMsg = document.getElementById('account-msg');
 const logoMsg = document.getElementById('logo-msg');
 const preview = document.getElementById('logo-preview');
 const delBtn = document.getElementById('logo-delete');
+const controls = [...form.elements, document.getElementById('logo-file')];
+controls.forEach((c) => { c.disabled = true; });
 
 function fill(s) {
   form.name.value = s.name;
@@ -47,5 +49,6 @@ delBtn.addEventListener('click', async () => fill(await api('/api/ajustes/logo',
 
 const [settings, me] = await Promise.all([api('/api/ajustes'), api('/api/me')]);
 fill(settings);
+controls.forEach((c) => { c.disabled = false; });
 const limit = me.plan.monthlyEnvelopes;
 document.getElementById('plan-info').textContent = `Plan ${me.plan.name}: ${limit === null ? 'sobres ilimitados' : `${me.usage.envelopesThisMonth} de ${limit} sobres usados este mes`}. Los sobres anulados o corregidos no cuentan.`;
