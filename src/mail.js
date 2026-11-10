@@ -260,7 +260,7 @@ export const templates = {
         buttonText: 'Ver el contrato',
         buttonUrl: url,
       }),
-      text: `El contrato "${title}" ${when} (${endDate}). Ver: ${url}`,
+      text: `El contrato "${title}" ${when} (${endDate}). Para renovarlo, abrí el sobre y tocá "Nueva versión". Ver: ${url}`,
     };
   },
 };
