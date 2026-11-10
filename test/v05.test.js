@@ -18,7 +18,7 @@ async function newEnvelope(recipients, opts = {}) {
     body: {
       title: opts.title || 'Prueba',
       recipients: recipients.map((r, i) => ({ key: `k${i}`, ...r })),
-      fields: opts.fields || recipients.map((_, i) => ({ recipientKey: `k${i}`, type: 'signature', page: 1, x: 0.1, y: 0.1 + i * 0.1, w: 0.3, h: 0.06 })),
+      fields: opts.fields || recipients.flatMap((r, i) => (r.role === 'cc' ? [] : [{ recipientKey: `k${i}`, type: 'signature', page: 1, x: 0.1, y: 0.1 + i * 0.1, w: 0.3, h: 0.06 }])),
     },
   });
   assert.equal(res.status, 200, await res.clone().text());
