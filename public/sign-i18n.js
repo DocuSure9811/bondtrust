@@ -1,6 +1,7 @@
 /** Textos de la experiencia de firma en español, inglés y portugués. */
 export const DICT = {
   es: {
+    attach: 'Adjuntar archivo', attachHint: 'Foto o PDF de hasta 5 MB', replaceFile: 'Tocá para reemplazar el archivo', uploading: 'Subiendo…', fileTooBig: 'El archivo supera 5 MB.', uploadFailed: 'No se pudo subir el archivo.',
     chooseOption: 'Elegí una opción', invalidFormat: 'Revisá el formato del campo marcado.',
     pageWord: { page: 'Página', of: 'de' },
     cantSign: 'No podés firmar con este enlace', knowDocsure: 'Conocé DocSure', sentBy: (s) => `Enviado por ${s}`,
@@ -24,6 +25,7 @@ export const DICT = {
     errors: {},
   },
   en: {
+    attach: 'Attach file', attachHint: 'Photo or PDF up to 5 MB', replaceFile: 'Tap to replace the file', uploading: 'Uploading…', fileTooBig: 'The file is larger than 5 MB.', uploadFailed: 'The file could not be uploaded.',
     chooseOption: 'Choose an option', invalidFormat: 'Check the format of the highlighted field.',
     pageWord: { page: 'Page', of: 'of' },
     cantSign: 'You can’t sign with this link', knowDocsure: 'About DocSure', sentBy: (s) => `Sent by ${s}`,
@@ -53,6 +55,7 @@ export const DICT = {
     },
   },
   pt: {
+    attach: 'Anexar arquivo', attachHint: 'Foto ou PDF de até 5 MB', replaceFile: 'Toque para substituir o arquivo', uploading: 'Enviando…', fileTooBig: 'O arquivo tem mais de 5 MB.', uploadFailed: 'Não foi possível enviar o arquivo.',
     chooseOption: 'Escolha uma opção', invalidFormat: 'Revise o formato do campo destacado.',
     pageWord: { page: 'Página', of: 'de' },
     cantSign: 'Você não pode assinar com este link', knowDocsure: 'Conheça a DocSure', sentBy: (s) => `Enviado por ${s}`,

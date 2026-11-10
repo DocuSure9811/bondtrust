@@ -1,6 +1,6 @@
 import { HttpError, cleanNumber, cleanText } from '../validate.js';
 
-export const FIELD_TYPES = new Set(['signature', 'initials', 'date', 'name', 'email', 'text', 'checkbox', 'select']);
+export const FIELD_TYPES = new Set(['signature', 'initials', 'date', 'name', 'email', 'text', 'checkbox', 'select', 'attachment']);
 /** Tipos cuyo valor puede controlar si otro campo se muestra. */
 export const CONTROL_TYPES = new Set(['checkbox', 'select', 'text']);
 export const VALIDATIONS = {

@@ -195,6 +195,21 @@ ALTER TABLE fields ADD COLUMN IF NOT EXISTS validation text;
 ALTER TABLE fields ADD COLUMN IF NOT EXISTS cond_field_id uuid REFERENCES fields(id) ON DELETE SET NULL;
 ALTER TABLE fields ADD COLUMN IF NOT EXISTS cond_value text;
 
+-- v0.5: adjuntos del firmante
+CREATE TABLE IF NOT EXISTS attachments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  envelope_id uuid NOT NULL REFERENCES envelopes(id) ON DELETE CASCADE,
+  field_id uuid NOT NULL UNIQUE REFERENCES fields(id) ON DELETE CASCADE,
+  recipient_id uuid NOT NULL REFERENCES recipients(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  content_type text NOT NULL,
+  size int NOT NULL,
+  sha256 text NOT NULL,
+  data bytea NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS attachments_envelope_idx ON attachments (envelope_id);
+
 -- v0.5: contactos
 CREATE TABLE IF NOT EXISTS contacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

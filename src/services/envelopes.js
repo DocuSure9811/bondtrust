@@ -5,6 +5,7 @@ import { MAX_PAGES, assemblePdf, buildFinalPdf, inspectPdf } from '../pdf/final.
 import { planOf } from '../plans.js';
 import { hmac, maskEmail, newOtp, randomToken, safeEqualHex, sha256Hex } from '../security.js';
 import { HttpError, cleanEmail, cleanNumber, cleanPngDataUrl, cleanText } from '../validate.js';
+import { listAttachments } from './attachments.js';
 import { rememberRecipients } from './contacts.js';
 import { VALIDATIONS, cleanFields, fieldsAsInput, insertFields, visibleFields } from './fields.js';
 import { emitEnvelopeEvent } from './webhooks.js';
@@ -25,7 +26,7 @@ const OTP_RESEND_SECONDS = 30;
 const SIGN_SESSION_MINUTES = 30;
 const AUTO_FIELDS = new Set(['date', 'name', 'email']);
 
-async function addEvent(db, envelopeId, type, { recipientId = null, ip = null, userAgent = null, data = {} } = {}) {
+export async function addEvent(db, envelopeId, type, { recipientId = null, ip = null, userAgent = null, data = {} } = {}) {
   await db.query(
     'INSERT INTO events (envelope_id, recipient_id, type, ip, user_agent, data) VALUES ($1, $2, $3, $4, $5, $6)',
     [envelopeId, recipientId, type, ip, userAgent ? userAgent.slice(0, 300) : null, data],
@@ -147,7 +148,7 @@ export async function removeDocument(ctx, ownerId, id, index) {
   });
 }
 
-async function ownedEnvelope(db, ownerId, id, { lock = false } = {}) {
+export async function ownedEnvelope(db, ownerId, id, { lock = false } = {}) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(404, 'Sobre no encontrado.', 'not_found');
   const { rows } = await db.query(
     `SELECT id, owner_id, title, message, status, sequential, page_count, original_sha256, final_sha256,
@@ -372,7 +373,8 @@ export async function envelopeDetail(ctx, ownerId, id) {
     [id],
   );
   const { send_idempotency_key: _k, owner_id: _o, ...publicEnv } = env;
-  return { envelope: { ...publicEnv, documents: documentsOf(env) }, recipients, fields, events };
+  const attachments = (await listAttachments(ctx.pool, id)).map(({ sha256: _s, ...a }) => a);
+  return { envelope: { ...publicEnv, documents: documentsOf(env) }, recipients, fields, events, attachments };
 }
 
 export async function ownerPdf(ctx, ownerId, id, which) {
@@ -474,7 +476,7 @@ export async function verifyOtp(ctx, token, code, meta) {
   return { session };
 }
 
-function assertSession(ctx, r, session) {
+export function assertSession(ctx, r, session) {
   const valid = typeof session === 'string' && session.length > 20 && r.sign_session_hash &&
     new Date(r.sign_session_expires_at) > new Date() &&
     safeEqualHex(hmac(ctx.config.tokenSecret, `sess:${session}`), r.sign_session_hash);
@@ -496,7 +498,8 @@ export async function signingFields(ctx, token, session) {
     [r.id],
   );
   const { rows: [env] } = await ctx.pool.query('SELECT title, page_count, original_sha256, documents FROM envelopes WHERE id = $1', [r.envelope_id]);
-  return { fields: rows, name: r.name, email: r.email, today: shortDate(new Date()), documents: documentsOf(env).map((d) => ({ name: d.name, pages: d.pages })) };
+  const { rows: uploaded } = await ctx.pool.query('SELECT field_id, name, size FROM attachments WHERE recipient_id = $1', [r.id]);
+  return { fields: rows, attachments: uploaded, name: r.name, email: r.email, today: shortDate(new Date()), documents: documentsOf(env).map((d) => ({ name: d.name, pages: d.pages })) };
 }
 
 export async function signDocument(ctx, token, body, meta) {
@@ -512,6 +515,8 @@ export async function signDocument(ctx, token, body, meta) {
       return null;
     };
     const shown = visibleFields(fields, rawOf);
+    const { rows: uploaded } = await db.query('SELECT field_id, name FROM attachments WHERE recipient_id = $1', [r.id]);
+    const fileOf = new Map(uploaded.map((a) => [a.field_id, a.name]));
     const needs = (type) => fields.some((f) => f.type === type && shown.has(f.id));
     const signature = needs('signature') ? cleanPngDataUrl(body.signature, 'La firma') : null;
     const initials = needs('initials') ? cleanPngDataUrl(body.initials, 'Las iniciales') : null;
@@ -530,15 +535,19 @@ export async function signDocument(ctx, token, body, meta) {
         value = cleanText(values[f.id] ?? '', { max: 500, field: 'un campo de texto', required: f.required }) || null;
         const rule = value && f.validation ? VALIDATIONS[f.validation] : null;
         if (rule && !rule.re.test(value)) throw new HttpError(400, `Un campo de texto tiene que ser ${rule.message}.`, 'validation');
+      } else if (f.type === 'attachment') {
+        value = fileOf.get(f.id) || null;
       } else if (f.type === 'select') {
         value = rawOf(f) || null;
         if (value && !(f.options || []).includes(value)) throw new HttpError(400, 'Elegí una opción válida de la lista.', 'validation');
       }
       if (!shown.has(f.id)) {
         await db.query('UPDATE fields SET value = NULL WHERE id = $1', [f.id]);
+        if (f.type === 'attachment') await db.query('DELETE FROM attachments WHERE field_id = $1', [f.id]);
         continue;
       }
       if (f.required && f.type === 'checkbox' && value !== 'true') throw new HttpError(400, 'Marcá todas las casillas obligatorias.', 'validation');
+      if (f.required && f.type === 'attachment' && !value) throw new HttpError(400, 'Falta subir un archivo adjunto obligatorio.', 'validation');
       if (f.required && !value && !AUTO_FIELDS.has(f.type)) throw new HttpError(400, 'Completá todos los campos obligatorios.', 'validation');
       await db.query('UPDATE fields SET value = $2 WHERE id = $1', [f.id, value]);
     }
@@ -606,6 +615,11 @@ export async function completeEnvelope(ctx, envelopeId) {
   const { rows: recipients } = await ctx.pool.query('SELECT * FROM recipients WHERE envelope_id = $1 ORDER BY position', [envelopeId]);
   const { rows: fields } = await ctx.pool.query('SELECT type, page, x, y, w, h, value FROM fields WHERE envelope_id = $1', [envelopeId]);
   const { rows: events } = await ctx.pool.query('SELECT type, recipient_id, ip, created_at FROM events WHERE envelope_id = $1 ORDER BY id', [envelopeId]);
+  const { rows: attachments } = await ctx.pool.query(
+    `SELECT a.name, a.content_type, a.data, a.sha256, a.size, r.name AS recipient_name, r.email AS recipient_email
+       FROM attachments a JOIN recipients r ON r.id = a.recipient_id WHERE a.envelope_id = $1 ORDER BY r.position, a.created_at`,
+    [envelopeId],
+  );
   const completedAt = new Date();
 
   const finalPdf = await buildFinalPdf({
@@ -615,6 +629,7 @@ export async function completeEnvelope(ctx, envelopeId) {
     owner,
     recipients,
     events,
+    attachments,
     siteUrl: ctx.config.siteUrl,
     sealP12: ctx.config.sealP12,
     sealPassword: ctx.config.sealPassword,
@@ -693,7 +708,7 @@ export function decodePdf(value) {
 }
 
 export async function apiEnvelope(ctx, ownerId, id) {
-  const { envelope: e, recipients, events } = await envelopeDetail(ctx, ownerId, id);
+  const { envelope: e, recipients, events, attachments } = await envelopeDetail(ctx, ownerId, id);
   const base = `${ctx.config.appUrl}/api/v1/envelopes/${e.id}`;
   return {
     id: e.id,
@@ -714,6 +729,7 @@ export async function apiEnvelope(ctx, ownerId, id) {
       status: r.status, signed_at: r.signed_at, declined_at: r.declined_at, decline_reason: r.decline_reason,
     })),
     events: events.map((ev) => ({ type: ev.type, recipient_id: ev.recipient_id, created_at: ev.created_at })),
+    attachments: attachments.map((a) => ({ id: a.id, recipient_id: a.recipient_id, field_label: a.label, name: a.name, content_type: a.content_type, size: a.size, created_at: a.created_at, url: `${ctx.config.appUrl}/api/v1/envelopes/${e.id}/attachments/${a.id}` })),
     links: {
       self: base,
       original_pdf: `${base}/document?version=original`,

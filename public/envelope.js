@@ -7,6 +7,7 @@ const EVENT_LABELS = {
   created: 'Sobre creado',
   document_added: 'Documento agregado',
   document_removed: 'Documento quitado',
+  attachment_uploaded: 'Archivo adjuntado',
   sent: 'Sobre enviado',
   email_sent: 'Invitación enviada',
   reminder_sent: 'Recordatorio enviado',
@@ -44,7 +45,7 @@ function say(text, ok = false) {
 }
 
 async function load() {
-  const { envelope: e, recipients, events } = await api(`/api/sobres/${id}`);
+  const { envelope: e, recipients, events, attachments } = await api(`/api/sobres/${id}`);
   if (e.status === 'draft') return location.replace(`/app/nuevo?id=${id}`);
   const byId = new Map(recipients.map((r) => [r.id, r]));
   const canCorrect = ['sent', 'declined', 'expired', 'voided'].includes(e.status);
@@ -70,6 +71,7 @@ async function load() {
         ${r.decline_reason ? `<small>Motivo: “${esc(r.decline_reason)}”</small>` : ''}</div>
         <div class="tpl-actions">${r.role === 'signer' ? `<span class="status-pill status-${r.status === 'signed' ? 'completed' : r.status === 'declined' ? 'declined' : 'sent'}">${esc(RECIPIENT_STATUS[r.status])}</span>` : ''}
         ${e.status === 'sent' && ['sent', 'viewed'].includes(r.status) ? `<button class="btn btn-ghost btn-sm" data-resend="${r.id}">Reenviar</button><button class="btn btn-ghost btn-sm" data-inperson="${r.id}">Firmar en persona</button>` : ''}</div></li>`).join('')}</ul>
+      ${attachments.length ? `<h3 class="small-title">Archivos adjuntos</h3><ul class="rlist">${attachments.map((a) => `<li><div><strong>${esc(a.name)}</strong><small>${esc(a.label || 'Adjunto')} · ${esc(byId.get(a.recipient_id)?.name || '')} · ${Math.ceil(a.size / 1024)} KB</small></div><button class="btn btn-ghost btn-sm" data-attachment="${a.id}" data-name="${esc(a.name)}">Descargar</button></li>`).join('')}</ul>` : ''}
       ${e.final_sha256 ? `<p class="fine">Huella SHA-256 del documento final: <code class="hash">${esc(e.final_sha256)}</code></p>` : ''}
       <p class="fine">Huella SHA-256 del original: <code class="hash">${esc(e.original_sha256)}</code></p>
       ${e.documents.length > 1 ? `<p class="fine"><strong>Documentos (${e.documents.length}):</strong> ${e.documents.map((d) => `${esc(d.name)} (${d.pages} pág.)`).join(' · ')}</p>` : ''}
@@ -80,6 +82,14 @@ async function load() {
 
   const on = (sel, fn) => root.querySelectorAll(sel).forEach((b) => b.addEventListener('click', () => fn(b).catch((err) => { say(err.message); b.disabled = false; })));
   on('[data-dl]', (b) => download(b.dataset.dl, e.title));
+  on('[data-attachment]', async (b) => {
+    const res = await api(`/api/sobres/${id}/adjuntos/${b.dataset.attachment}`, { raw: true });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = b.dataset.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
   on('[data-resend]', async (b) => {
     b.disabled = true;
     await api(`/api/sobres/${id}/destinatarios/${b.dataset.resend}/reenviar`, { method: 'POST' });

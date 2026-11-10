@@ -1,5 +1,6 @@
 import express from 'express';
 import * as keys from './services/apikeys.js';
+import * as attachments from './services/attachments.js';
 import * as contacts from './services/contacts.js';
 import * as env from './services/envelopes.js';
 import * as templatesSvc from './services/templates.js';
@@ -92,6 +93,15 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
   router.post('/envelopes/:id/documents', asyncRoute(async (req, res) => {
     await env.appendDocument(ctx, req.apiUser.id, req.params.id, { name: req.body?.name, pdf: env.decodePdf(req.body?.document_base64) });
     res.status(201).json(await env.apiEnvelope(ctx, req.apiUser.id, req.params.id));
+  }));
+
+  router.get('/envelopes/:id/attachments/:aid', asyncRoute(async (req, res) => {
+    const a = await attachments.ownerAttachment(ctx, req.apiUser.id, req.params.id, req.params.aid);
+    res.set({
+      'Content-Type': a.content_type,
+      'Content-Disposition': `attachment; filename="adjunto"; filename*=UTF-8''${encodeURIComponent(a.name.replace(/[^\p{L}\p{N} ._-]/gu, '').slice(0, 120) || 'adjunto')}`,
+      'Cache-Control': 'private, no-store',
+    }).send(a.data);
   }));
 
   router.post('/envelopes/:id/correct', asyncRoute(async (req, res) => {

@@ -11,6 +11,7 @@ const FIELD_TYPES = [
   ['text', 'Texto que escribe el firmante; con "validation" exige un formato: email, number, id (documento) o phone'],
   ['checkbox', 'Casilla de verificación'],
   ['select', 'Lista desplegable; requiere "options": ["A", "B", …] (hasta 30)'],
+  ['attachment', 'Archivo que sube el firmante (foto del documento, comprobante): PNG, JPG o PDF de hasta 5 MB; se anexa al PDF final'],
 ];
 
 const ERRORS = [
@@ -158,6 +159,7 @@ const ENDPOINTS = [
   ['POST', '/envelopes/{id}/extend', 'Extiende el vencimiento: {"days": 1-120} desde hoy.'],
   ['POST', '/envelopes/{id}/recipients/{recipient_id}/resend', 'Reenvía la invitación (el enlace anterior deja de funcionar).'],
   ['GET', '/envelopes/{id}/document?version=original|final', 'Descarga el PDF original o el final firmado y sellado.'],
+  ['GET', '/envelopes/{id}/attachments/{attachment_id}', 'Descarga un archivo que adjuntó un firmante (la lista viene en "attachments" del sobre).'],
   ['DELETE', '/envelopes/{id}', 'Borra un borrador.'],
   ['GET', '/templates', 'Lista las plantillas con sus roles.'],
   ['POST', '/templates/{id}/envelopes', 'Crea y envía un sobre desde una plantilla: {"recipients": [...] en el orden de los roles}.'],
@@ -381,6 +383,7 @@ export function openapiSpec(config) {
       '/envelopes/{id}/void': { post: { summary: 'Anular un sobre en curso', security: auth, parameters: [idParam], responses: { 200: envResp, 409: err } } },
       '/envelopes/{id}/recipients/{recipient_id}/resend': { post: { summary: 'Reenviar invitación', security: auth, parameters: [idParam, { name: 'recipient_id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: { description: 'ok' }, 409: err, 429: err } } },
       '/envelopes/{id}/document': { get: { summary: 'Descargar PDF', security: auth, parameters: [idParam, { name: 'version', in: 'query', schema: { type: 'string', enum: ['original', 'final'], default: 'final' } }], responses: { 200: { description: 'PDF', content: { 'application/pdf': {} } }, 404: err } } },
+      '/envelopes/{id}/attachments/{attachment_id}': { get: { summary: 'Descargar un adjunto del firmante', security: auth, parameters: [idParam, { name: 'attachment_id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: { description: 'Archivo', content: { 'image/png': {}, 'image/jpeg': {}, 'application/pdf': {} } }, 404: err } } },
       '/envelopes/{id}/correct': { post: { summary: 'Corregir: anula y crea un borrador idéntico', security: auth, parameters: [idParam], responses: { 201: envResp, 409: err } } },
       '/envelopes/{id}/extend': { post: { summary: 'Extender vencimiento', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['days'], properties: { days: { type: 'integer', minimum: 1, maximum: 120 } } } } } }, responses: { 200: envResp, 409: err } } },
       '/templates': { get: { summary: 'Listar plantillas', security: auth, responses: { 200: { description: 'Lista con roles' } } } },

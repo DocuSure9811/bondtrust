@@ -13,6 +13,7 @@ let lang = pickLang();
 let t = DICT[lang];
 let step = 'identity';
 const values = {};
+const files = {};
 let signature = null;
 let initials = null;
 
@@ -171,6 +172,7 @@ async function documentStep() {
   const headers = { 'X-Sign-Session': session };
   const [pdfRes, fieldData] = await Promise.all([api(`${base}/documento`, { raw: true, headers }), api(`${base}/campos`, { headers })]);
   data = fieldData;
+  for (const a of data.attachments || []) files[a.field_id] = a.name;
   const bytes = await pdfRes.arrayBuffer();
   root.innerHTML = `<p class="muted center" id="instructions">${t.instructions}</p><div class="sign-pages" id="pages"></div>`;
   await renderPdf(bytes, document.getElementById('pages'), { maxWidth: 880, label: pageLabeler(data.documents, t.pageWord) });
@@ -218,7 +220,45 @@ function fieldDone(f) {
   if (f.type === 'checkbox') return !f.required || values[f.id] === true;
   if (f.type === 'text') return (!f.required || Boolean(String(values[f.id] || '').trim())) && formatOk(f);
   if (f.type === 'select') return !f.required || Boolean(values[f.id]);
+  if (f.type === 'attachment') return !f.required || Boolean(files[f.id]);
   return true;
+}
+
+/** El firmante elige un archivo (foto o PDF) y se sube enseguida; puede reemplazarlo antes de finalizar. */
+function pickFile(f, el) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/png,image/jpeg,application/pdf';
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    const err = document.getElementById('bar-err');
+    if (!file) return;
+    err.textContent = '';
+    if (file.size > 5 * 1024 * 1024) {
+      err.dataset.kind = 'file';
+      err.textContent = t.fileTooBig;
+      return;
+    }
+    el.dataset.busy = '1';
+    el.textContent = t.uploading;
+    try {
+      const res = await fetch(`${base}/adjuntos/${f.id}`, {
+        method: 'PUT',
+        headers: { 'X-DocSure': '1', 'X-Sign-Session': session, 'X-File-Name': encodeURIComponent(file.name), 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(body.error || t.uploadFailed), { code: body.code });
+      files[f.id] = body.name;
+    } catch (e) {
+      err.dataset.kind = 'file';
+      err.textContent = errMsg(e);
+    } finally {
+      delete el.dataset.busy;
+      update();
+    }
+  });
+  input.click();
 }
 
 function placeFields() {
@@ -252,6 +292,10 @@ function placeFields() {
       input.setAttribute('aria-label', f.label || t.checkbox);
       input.addEventListener('change', () => { values[f.id] = input.checked; update(); });
       el.appendChild(input);
+    } else if (f.type === 'attachment') {
+      el = document.createElement('button');
+      el.type = 'button';
+      el.addEventListener('click', () => pickFile(f, el));
     } else if (f.type === 'signature' || f.type === 'initials') {
       el = document.createElement('button');
       el.type = 'button';
@@ -292,6 +336,10 @@ function update() {
     const done = fieldDone(f);
     el.classList.toggle('filled', done);
     if (done) el.classList.remove('missing');
+    if (f.type === 'attachment' && !el.dataset.busy) {
+      el.textContent = files[f.id] ? `✓ ${files[f.id]}` : `${t.attach}${f.label ? `: ${f.label}` : ''}`;
+      el.title = files[f.id] ? t.replaceFile : t.attachHint;
+    }
     if (f.type === 'signature' || f.type === 'initials') {
       const img = f.type === 'signature' ? signature : initials;
       el.innerHTML = img ? `<img alt="${f.type === 'signature' ? t.yourSignatureAlt : t.yourInitialsAlt}" src="${img}">` : (f.type === 'signature' ? t.signHere : t.initialsBox);

@@ -9,6 +9,7 @@ import { hashPassword, hmac, randomToken, safeEqualHex, sha256Hex, verifyPasswor
 import { createApiV1 } from './api-v1.js';
 import * as apiKeys from './services/apikeys.js';
 import * as account from './services/account.js';
+import * as attachments from './services/attachments.js';
 import * as contacts from './services/contacts.js';
 import * as env from './services/envelopes.js';
 import * as templatesSvc from './services/templates.js';
@@ -255,6 +256,17 @@ export function createApp({ pool, config, mailer }) {
     }),
   );
 
+  /** Descarga de un adjunto: siempre como archivo, con el tipo detectado al subirlo. */
+  function sendFile(res, a) {
+    const safe = a.name.replace(/[^\p{L}\p{N} ._-]/gu, '').slice(0, 120) || 'adjunto';
+    res.set({
+      'Content-Type': a.content_type,
+      'Content-Disposition': `attachment; filename="adjunto"; filename*=UTF-8''${encodeURIComponent(safe)}`,
+      'Cache-Control': 'private, no-store',
+    });
+    res.send(a.data);
+  }
+
   function sendPdf(res, buf, name, inline = false) {
     const safe = name.replace(/[^\p{L}\p{N} ._-]/gu, '').slice(0, 120) || 'documento';
     res.set({
@@ -388,6 +400,15 @@ export function createApp({ pool, config, mailer }) {
   }));
   app.post('/api/firmar/:token/rechazar', json, asyncRoute(async (req, res) => {
     res.json(await env.declineDocument(ctx, req.params.token, { ...req.body, session: session(req) }, clientMeta(req)));
+  }));
+  const fileBody = express.raw({ type: () => true, limit: '5mb' });
+  app.put('/api/firmar/:token/adjuntos/:fieldId', fileBody, asyncRoute(async (req, res) => {
+    signLimit(req, 'attach', 60, 3600_000);
+    res.json(await attachments.uploadAttachment(ctx, req.params.token, session(req), req.params.fieldId, { name: req.headers['x-file-name'] ? decodeURIComponent(String(req.headers['x-file-name'])) : 'adjunto', bytes: req.body }, clientMeta(req)));
+  }));
+  app.get('/api/sobres/:id/adjuntos/:aid', requireUser, asyncRoute(async (req, res) => {
+    const a = await attachments.ownerAttachment(ctx, req.user.id, req.params.id, req.params.aid);
+    sendFile(res, a);
   }));
   app.post('/api/firmar/:token/presencial', asyncRoute(async (req, res) => {
     res.json(await env.inPersonSession(ctx, req.params.token, req.user, clientMeta(req)));

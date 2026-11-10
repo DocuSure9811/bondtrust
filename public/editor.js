@@ -2,8 +2,8 @@ import { api, esc } from './app-common.js';
 import { pageLabeler, renderPdf } from './pdfview.js';
 
 const COLORS = ['--signer-0', '--signer-1', '--signer-2', '--signer-3', '--signer-4', '--signer-5'];
-const TYPE_LABEL = { signature: 'Firma', initials: 'Iniciales', date: 'Fecha', name: 'Nombre', email: 'Email', text: 'Texto', checkbox: '☐', select: 'Lista' };
-const DEFAULT_SIZE = { signature: [0.26, 0.06], initials: [0.1, 0.05], date: [0.18, 0.03], name: [0.26, 0.03], email: [0.3, 0.03], text: [0.26, 0.03], checkbox: [0.028, 0.02], select: [0.26, 0.03] };
+const TYPE_LABEL = { signature: 'Firma', initials: 'Iniciales', date: 'Fecha', name: 'Nombre', email: 'Email', text: 'Texto', checkbox: '☐', select: 'Lista', attachment: 'Adjunto' };
+const DEFAULT_SIZE = { signature: [0.26, 0.06], initials: [0.1, 0.05], date: [0.18, 0.03], name: [0.26, 0.03], email: [0.3, 0.03], text: [0.26, 0.03], checkbox: [0.028, 0.02], select: [0.26, 0.03], attachment: [0.26, 0.04] };
 const CONTROL_TYPES = new Set(['checkbox', 'select', 'text']);
 
 const state = {

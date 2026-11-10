@@ -102,7 +102,7 @@ export function editorPage(config, user) {
           <button type="button" data-type="signature" class="active">Firma</button><button type="button" data-type="initials">Iniciales</button>
           <button type="button" data-type="date">Fecha de firma</button><button type="button" data-type="name">Nombre</button>
           <button type="button" data-type="email">Email</button><button type="button" data-type="text">Texto</button>
-          <button type="button" data-type="checkbox">Casilla</button><button type="button" data-type="select">Lista</button>
+          <button type="button" data-type="checkbox">Casilla</button><button type="button" data-type="select">Lista</button><button type="button" data-type="attachment">Adjunto</button>
         </div>
         <div id="selected-props" class="props" hidden>
           <p class="props-title" id="prop-title">Campo seleccionado</p>

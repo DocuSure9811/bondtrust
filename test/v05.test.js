@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { PDFDocument } from 'pdf-lib';
+import { sealFingerprint, verifySeal } from '../src/pdf/verify.js';
 import { PNG, client, codeFrom, linkFrom, outbox, samplePdf, startTestApp } from './helpers.js';
 
 let t;
@@ -178,7 +179,7 @@ async function openForSigning(email) {
   const { fields } = await (await signer(`/api/firmar/${token}/campos`, { headers: { 'x-sign-session': session } })).json();
   const byLabel = Object.fromEntries(fields.filter((f) => f.label).map((f) => [f.label, f]));
   const sign = (values) => signer(`/api/firmar/${token}/firmar`, { method: 'POST', headers: { 'x-sign-session': session }, body: { signature: PNG, consent: true, values } });
-  return { byLabel, sign, fields };
+  return { byLabel, sign, fields, token, session, signer };
 }
 
 test('campos: validaciones del editor (listas, formatos, condiciones y ciclos)', async () => {
@@ -273,4 +274,71 @@ test('campos condicionales por API v1', async () => {
   assert.equal((await a.sign({ [plan.id]: 'Anual', [a.byLabel.CUIT.id]: '20301112223' })).status, 200);
   const spec = await (await fetch(`${t.base}/openapi.json`)).json();
   assert.ok(spec.components.schemas.Field.properties.show_if);
+});
+
+// ---------- Adjuntos del firmante ----------
+
+test('adjuntos: subir, validar, reemplazar, anexar al PDF final y sello íntegro', async () => {
+  const { id } = await (await owner('/api/sobres?title=Con%20adjuntos', { method: 'POST', body: await samplePdf() })).json();
+  const fields = [
+    F({ key: 'sig', type: 'signature', h: 0.06 }),
+    F({ key: 'dni', type: 'attachment', label: 'DNI frente', y: 0.3, h: 0.04 }),
+    F({ key: 'c', type: 'checkbox', label: 'Tengo constancia', y: 0.4, w: 0.03, h: 0.02 }),
+    F({ key: 'extra', type: 'attachment', label: 'Constancia', y: 0.5, h: 0.04, showIf: { key: 'c', equals: 'true' } }),
+  ];
+  assert.equal((await owner(`/api/sobres/${id}`, { method: 'PUT', body: { title: 'Con adjuntos', recipients: [{ key: 's', name: 'Adj Firmante', email: 'adj@example.com' }], fields } })).status, 200);
+  assert.equal((await owner(`/api/sobres/${id}/enviar`, { method: 'POST', headers: { 'idempotency-key': `adj-${id}` } })).status, 200);
+
+  const a = await openForSigning('adj@example.com');
+  const { token, session, signer } = a;
+  const up = (fieldId, body, { name = 'dni.png', sess = session } = {}) => fetch(`${t.base}/api/firmar/${token}/adjuntos/${fieldId}`, {
+    method: 'PUT', headers: { 'x-docsure': '1', 'x-sign-session': sess, 'x-file-name': encodeURIComponent(name), 'content-type': 'application/octet-stream' }, body,
+  });
+  const png = Buffer.from(PNG.split(',')[1], 'base64');
+  const dniId = a.byLabel['DNI frente'].id;
+  const extraId = a.byLabel.Constancia.id;
+
+  assert.equal((await a.sign({})).status, 400, 'falta el adjunto obligatorio');
+  assert.equal((await up(dniId, Buffer.from('hola, no soy una imagen'))).status, 415);
+  assert.equal((await up(dniId, Buffer.concat([png, Buffer.alloc(5 * 1024 * 1024)]))).status, 413);
+  assert.equal((await up(dniId, png, { sess: 'x'.repeat(40) })).status, 401, 'sin sesión de firma no se sube');
+  assert.equal((await up(a.byLabel['Tengo constancia'].id, png)).status, 404, 'solo campos de tipo adjunto');
+  assert.equal((await up('00000000-0000-0000-0000-000000000000', png)).status, 404);
+  const first = await up(dniId, png, { name: 'C:\\fotos\\dni.png' });
+  assert.equal(first.status, 200, await first.clone().text());
+  assert.equal((await first.json()).name, 'C:_fotos_dni.png', 'el nombre no lleva rutas');
+  const replaced = await (await up(dniId, await samplePdf(), { name: 'dni.pdf' })).json();
+  assert.equal(replaced.content_type, 'application/pdf', 'se reemplaza');
+  assert.equal((await up(extraId, png, { name: 'constancia.png' })).status, 200);
+
+  // La casilla queda sin marcar: el adjunto condicional se descarta.
+  const signed = await signer(`/api/firmar/${token}/firmar`, { method: 'POST', headers: { 'x-sign-session': session }, body: { signature: PNG, consent: true, values: {} } });
+  assert.equal(signed.status, 200, await signed.clone().text());
+  const { rows: att } = await t.pool.query('SELECT name, content_type FROM attachments WHERE envelope_id = $1', [id]);
+  assert.deepEqual(att.map((x) => x.name), ['dni.pdf']);
+  assert.equal((await up(dniId, png)).status, 410, 'después de firmar no se puede subir');
+
+  const { rows: [env] } = await t.pool.query('SELECT status, final_pdf FROM envelopes WHERE id = $1', [id]);
+  assert.equal(env.status, 'completed');
+  const final = await PDFDocument.load(env.final_pdf);
+  assert.ok(final.getPageCount() >= 5, 'documento (2) + adjunto (2) + certificado');
+  const seal = verifySeal(env.final_pdf, sealFingerprint(t.config.sealP12, t.config.sealPassword));
+  assert.equal(seal.intact, true, 'el sello cubre también los adjuntos');
+
+  const detail = await (await owner(`/api/sobres/${id}`)).json();
+  assert.equal(detail.attachments.length, 1);
+  assert.equal(detail.attachments[0].label, 'DNI frente');
+  const dl = await owner(`/api/sobres/${id}/adjuntos/${detail.attachments[0].id}`);
+  assert.equal(dl.status, 200);
+  assert.equal(dl.headers.get('content-type'), 'application/pdf');
+  assert.match(dl.headers.get('content-disposition'), /^attachment;/);
+  const other = client(t.base);
+  await other('/api/auth/registro', { method: 'POST', body: { name: 'Ajeno', email: 'ajeno-adj@example.com', password: 'clave-ajena-larga' } });
+  assert.equal((await other(`/api/sobres/${id}/adjuntos/${detail.attachments[0].id}`)).status, 404);
+
+  const { key } = await (await owner('/api/claves', { method: 'POST', body: { name: 'adj' } })).json();
+  const apiEnv = await (await fetch(`${t.base}/api/v1/envelopes/${id}`, { headers: { authorization: `Bearer ${key}` } })).json();
+  assert.equal(apiEnv.attachments.length, 1);
+  const apiDl = await fetch(apiEnv.attachments[0].url.replace(t.config.appUrl, t.base), { headers: { authorization: `Bearer ${key}` } });
+  assert.equal(apiDl.status, 200);
 });

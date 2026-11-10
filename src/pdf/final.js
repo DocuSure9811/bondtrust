@@ -114,7 +114,7 @@ async function drawField(pdf, page, field, font, imageCache) {
     page.drawImage(image, { ...at(p, (p.boxW - w) / 2, (p.boxH - h) / 2), width: w, height: h, rotate: p.rotate });
     return;
   }
-  const raw = field.type === 'checkbox' ? (field.value === 'true' ? 'X' : '') : field.value;
+  const raw = field.type === 'checkbox' ? (field.value === 'true' ? 'X' : '') : field.type === 'attachment' && field.value ? `Adjunto: ${field.value}` : field.value;
   if (!raw) return;
   const size = Math.max(6, Math.min(12, p.boxH * 0.62));
   const text = fitText(font, encodable(font, raw), size, Math.max(4, p.boxW - 4));
@@ -145,6 +145,7 @@ const EVENT_LABELS = {
   corrected: 'Sobre corregido',
   document_added: 'Documento agregado',
   document_removed: 'Documento quitado',
+  attachment_uploaded: 'Archivo adjuntado por el firmante',
   voided: 'Sobre anulado',
   completed: 'Sobre completado',
 };
@@ -200,7 +201,42 @@ class Writer {
   }
 }
 
-async function addCertificate(pdf, { envelope, owner, recipients, events, siteUrl }) {
+const A4 = [595.28, 841.89];
+
+/** Anexa los archivos que subieron los firmantes, cada uno con su encabezado de identificación. */
+async function addAttachments(pdf, attachments) {
+  if (!attachments.length) return;
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const regular = await pdf.embedFont(StandardFonts.Helvetica);
+  const header = (page, a, n, total) => {
+    const { width, height } = page.getSize();
+    page.drawRectangle({ x: 0, y: height - 22, width, height: 22, color: BRAND });
+    const text = `Adjunto: ${a.name} · ${a.recipient_name} <${a.recipient_email}>${total > 1 ? ` · página ${n} de ${total}` : ''}`;
+    page.drawText(fitText(bold, encodable(bold, text), 8.5, width - 24), { x: 12, y: height - 15, size: 8.5, font: bold, color: rgb(1, 1, 1) });
+  };
+  for (const a of attachments) {
+    if (a.content_type === 'application/pdf') {
+      const src = await PDFDocument.load(a.data, { updateMetadata: false });
+      const copied = await pdf.copyPages(src, src.getPageIndices());
+      copied.forEach((p, i) => {
+        p.setRotation(degrees(0));
+        pdf.addPage(p);
+        header(p, a, i + 1, copied.length);
+      });
+      continue;
+    }
+    const image = a.content_type === 'image/png' ? await pdf.embedPng(a.data) : await pdf.embedJpg(a.data);
+    const page = pdf.addPage(A4);
+    header(page, a, 1, 1);
+    const scale = Math.min((A4[0] - 60) / image.width, (A4[1] - 100) / image.height, 1);
+    const w = image.width * scale;
+    const h = image.height * scale;
+    page.drawImage(image, { x: (A4[0] - w) / 2, y: A4[1] - 50 - h, width: w, height: h });
+    page.drawText(encodable(regular, `SHA-256 del archivo: ${a.sha256}`), { x: 30, y: 24, size: 7, font: regular, color: MUTED });
+  }
+}
+
+async function addCertificate(pdf, { envelope, owner, recipients, events, siteUrl, attachments = [] }) {
   const fonts = {
     regular: await pdf.embedFont(StandardFonts.Helvetica),
     bold: await pdf.embedFont(StandardFonts.HelveticaBold),
@@ -253,6 +289,17 @@ async function addCertificate(pdf, { envelope, owner, recipients, events, siteUr
     w.rule();
   }
 
+  if (attachments.length) {
+    w.gap(6);
+    w.text('Archivos adjuntos por los firmantes', { size: 13, bold: true });
+    w.rule();
+    for (const a of attachments) {
+      w.text(`${a.name} · ${a.recipient_name} <${a.recipient_email}> · ${Math.ceil(a.size / 1024)} KB`, { size: 9 });
+      w.text(`SHA-256 ${a.sha256}`, { size: 8, color: MUTED });
+    }
+    w.text('Cada archivo se anexa completo antes de este certificado.', { size: 8.5, color: MUTED });
+    w.gap(4);
+  }
   w.gap(6);
   w.text('Registro de auditoría', { size: 13, bold: true });
   w.rule();
@@ -270,7 +317,7 @@ async function addCertificate(pdf, { envelope, owner, recipients, events, siteUr
   );
 }
 
-export async function buildFinalPdf({ original, fields, envelope, owner, recipients, events, siteUrl, sealP12, sealPassword }) {
+export async function buildFinalPdf({ original, fields, envelope, owner, recipients, events, attachments = [], siteUrl, sealP12, sealPassword }) {
   const pdf = await PDFDocument.load(original, { updateMetadata: false });
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const pages = pdf.getPages();
@@ -279,7 +326,8 @@ export async function buildFinalPdf({ original, fields, envelope, owner, recipie
     const page = pages[field.page - 1];
     if (page) await drawField(pdf, page, field, font, imageCache);
   }
-  await addCertificate(pdf, { envelope, owner, recipients, events, siteUrl });
+  await addAttachments(pdf, attachments);
+  await addCertificate(pdf, { envelope, owner, recipients, events, siteUrl, attachments });
   pdf.setProducer('DocSure');
   pdf.setTitle(envelope.title);
   pdflibAddPlaceholder({
