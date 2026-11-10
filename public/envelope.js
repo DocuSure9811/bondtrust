@@ -83,7 +83,7 @@ async function load() {
     </div>
   </div>
   <p class="form-error" role="alert" id="msg"></p>
-  <div class="detail-grid">
+  <div class="detail-grid"><div class="detail-col">
     <section class="card"><h2>Destinatarios</h2><ul class="rlist">${recipients.map((r) => `
       <li><div><strong>${esc(r.name)}</strong><small>${esc(r.email)} · ${r.role === 'cc' ? 'Recibe copia' : `Firmante${e.sequential ? ` · orden ${r.routing_order}` : ''}`}</small>
         ${r.decline_reason ? `<small>Motivo: “${esc(r.decline_reason)}”</small>` : ''}</div>
@@ -94,6 +94,9 @@ async function load() {
       <p class="fine">Huella SHA-256 del original: <code class="hash">${esc(e.original_sha256)}</code></p>
       ${e.documents.length > 1 ? `<p class="fine"><strong>Documentos (${e.documents.length}):</strong> ${e.documents.map((d) => `${esc(d.name)} (${d.pages} pág.)`).join(' · ')}</p>` : ''}
     </section>
+    <section class="card"><h2>Historial</h2><ol class="timeline">${events.map((ev) => `
+      <li><time datetime="${esc(ev.created_at)}">${fmtDate(ev.created_at, true)}</time>${esc(EVENT_LABELS[ev.type] || ev.type)}${ev.recipient_id && byId.get(ev.recipient_id) ? ` · ${esc(byId.get(ev.recipient_id).name)}` : ''}</li>`).join('')}</ol></section>
+  </div><div class="detail-col">
     <section class="card" id="contract"><h2>Contrato</h2>
       <div class="contract-row">
         <label>Vencimiento del contrato<input type="date" id="c-end" value="${esc(contract.contract_end || '')}"${edit ? '' : ' disabled'}></label>
@@ -105,9 +108,13 @@ async function load() {
       <ol class="versions">${contract.versions.map((v) => `<li${v.id === id ? ' aria-current="true"' : ''}><a href="/app/sobres/${esc(v.id)}">Versión ${v.version}</a> · ${esc(STATUS_TEXT[v.status] || v.status)} · ${fmtDate(v.completed_at || v.created_at)}</li>`).join('')}</ol>
       ${edit ? '<button class="btn btn-ghost btn-sm" id="new-version" type="button">Nueva versión</button>' : ''}
     </section>
-    <section class="card"><h2>Historial</h2><ol class="timeline">${events.map((ev) => `
-      <li><time datetime="${esc(ev.created_at)}">${fmtDate(ev.created_at, true)}</time>${esc(EVENT_LABELS[ev.type] || ev.type)}${ev.recipient_id && byId.get(ev.recipient_id) ? ` · ${esc(byId.get(ev.recipient_id).name)}` : ''}</li>`).join('')}</ol></section>
-  </div>`;
+    <section class="card" id="ai"><h2>Asistente de IA</h2>
+      <p class="fine">Lee el documento y te ayuda a entenderlo. Las respuestas son orientativas y no reemplazan asesoramiento legal.</p>
+      <div class="ai-actions"><button class="btn btn-ghost btn-sm" type="button" data-ai="resumen">Resumir</button><button class="btn btn-ghost btn-sm" type="button" data-ai="datos">Datos clave</button></div>
+      <form id="ai-ask" class="ai-ask" novalidate><label class="visually-hidden" for="ai-q">Pregunta sobre el documento</label><input id="ai-q" maxlength="500" placeholder="Preguntá algo del documento" autocomplete="off"><button class="btn btn-primary btn-sm" type="submit">Preguntar</button></form>
+      <div id="ai-out" class="ai-out" aria-live="polite"></div>
+    </section>
+  </div></div>`;
 
   const on = (sel, fn) => root.querySelectorAll(sel).forEach((b) => b.addEventListener('click', () => fn(b).catch((err) => { say(err.message); b.disabled = false; })));
   on('[data-dl]', (b) => download(b.dataset.dl, e.title));
@@ -158,6 +165,60 @@ async function load() {
     root.querySelector('#c-status').textContent = contractStatus(saved);
     b.disabled = false;
     say(saved.contract_end ? 'Vencimiento guardado.' : 'Vencimiento quitado.', true);
+  });
+  const aiOut = root.querySelector('#ai-out');
+  const aiBusy = (on) => root.querySelectorAll('#ai button').forEach((b) => { b.disabled = on; });
+  const note = (r) => (r.truncated ? '<p class="fine">El documento es largo: se analizaron el comienzo y el final.</p>' : '');
+  const ul = (items, cls = '') => (items.length ? `<ul class="${cls}">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '');
+  const shortDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('es-AR', { timeZone: 'UTC' });
+  function showSummary(r) {
+    aiOut.innerHTML = `<h3 class="small-title">Resumen</h3><p>${esc(r.summary)}</p>${r.key_points.length ? `<h3 class="small-title">Puntos clave</h3>${ul(r.key_points)}` : ''}${r.attention.length ? `<h3 class="small-title">Para revisar antes de firmar</h3>${ul(r.attention, 'ai-warn')}` : ''}${note(r)}`;
+  }
+  function showData(r) {
+    const row = (k, v) => (v ? `<dt>${k}</dt><dd>${v}</dd>` : '');
+    aiOut.innerHTML = `<h3 class="small-title">Datos clave</h3><dl class="ai-data">
+      ${row('Tipo', esc(r.document_type || ''))}
+      ${row('Partes', r.parties.map((p) => `${esc(p.name)}${p.role ? ` (${esc(p.role)})` : ''}`).join('<br>'))}
+      ${row('Montos', r.amounts.map((a) => `${esc(a.concept ? `${a.concept}: ` : '')}${esc(a.currency || '')} ${esc(a.amount)}`).join('<br>'))}
+      ${row('Fechas', r.dates.map((d) => `${esc(d.concept)}: ${shortDay(d.date)}`).join('<br>'))}
+      ${row('Plazo', esc(r.term || ''))}
+      ${row('Vence', r.contract_end ? shortDay(r.contract_end) : '')}
+      ${row('Renovación', esc(r.renewal || ''))}
+      ${row('Rescisión', esc(r.termination || ''))}
+      ${row('Ley aplicable', esc(r.governing_law || ''))}
+    </dl>${r.contract_end && edit && r.contract_end !== root.querySelector('#c-end').value ? `<button class="btn btn-primary btn-sm" type="button" id="ai-use-end" data-date="${esc(r.contract_end)}">Usar ${shortDay(r.contract_end)} como vencimiento</button>` : ''}${note(r)}`;
+    root.querySelector('#ai-use-end')?.addEventListener('click', (ev) => {
+      root.querySelector('#c-end').value = ev.target.dataset.date;
+      ev.target.remove();
+      root.querySelector('#c-save').click();
+    });
+  }
+  on('[data-ai]', async (b) => {
+    aiBusy(true);
+    aiOut.innerHTML = '<p class="muted">Leyendo el documento…</p>';
+    try {
+      const r = await api(`/api/sobres/${id}/ia/${b.dataset.ai}`, { method: 'POST' });
+      if (b.dataset.ai === 'resumen') showSummary(r); else showData(r);
+    } catch (err) {
+      aiOut.innerHTML = `<p class="form-error">${esc(err.message)}</p>`;
+    } finally {
+      aiBusy(false);
+    }
+  });
+  root.querySelector('#ai-ask').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const question = root.querySelector('#ai-q').value.trim();
+    if (!question) return;
+    aiBusy(true);
+    aiOut.innerHTML = '<p class="muted">Buscando la respuesta en el documento…</p>';
+    try {
+      const r = await api(`/api/sobres/${id}/ia/preguntar`, { method: 'POST', body: { question } });
+      aiOut.innerHTML = `<h3 class="small-title">${esc(question)}</h3><p class="ai-answer">${esc(r.answer)}</p>${note(r)}`;
+    } catch (err) {
+      aiOut.innerHTML = `<p class="form-error">${esc(err.message)}</p>`;
+    } finally {
+      aiBusy(false);
+    }
   });
   on('#new-version', async () => {
     if (!confirm('Se crea un borrador con los mismos documentos, firmantes y campos, enlazado como versión nueva. ¿Continuar?')) return;

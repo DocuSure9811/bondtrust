@@ -309,6 +309,16 @@ CREATE TABLE IF NOT EXISTS automations (
 CREATE INDEX IF NOT EXISTS automations_owner_idx ON automations (owner_id, trigger) WHERE active;
 
 -- v0.7: enlaces de descarga del PDF final para terceros (copias enviadas por automatizaciones)
+-- v0.7: resultados del asistente de IA, por sobre y por versión del documento
+CREATE TABLE IF NOT EXISTS ai_results (
+  envelope_id uuid NOT NULL REFERENCES envelopes(id) ON DELETE CASCADE,
+  kind text NOT NULL,
+  source_sha256 text NOT NULL,
+  result jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (envelope_id, kind, source_sha256)
+);
+
 CREATE TABLE IF NOT EXISTS document_links (
   id bigserial PRIMARY KEY,
   envelope_id uuid NOT NULL REFERENCES envelopes(id) ON DELETE CASCADE,

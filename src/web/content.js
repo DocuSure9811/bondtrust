@@ -63,6 +63,9 @@ export function compareDocusign(config, user) {
     ['Campos condicionales y adjuntos desde el plan Gratis', 'Formularios inteligentes y documentación del firmante sin pagar un plan avanzado.'],
     ['Equipos con plantillas compartidas', 'Invitá a tu equipo con un enlace; los administradores ven todos los sobres.'],
     ['Exportación CSV y carpetas', 'Ordená y exportá tus sobres para auditoría o control, en todos los planes.'],
+    ['Asistente de IA en todos los planes', 'Resumen, datos clave y preguntas sobre cada contrato, sin contratar un módulo aparte.'],
+    ['Vencimientos y versiones de contratos', 'Aviso por email antes de que venza un contrato y nueva versión con un clic.'],
+    ['Automatizaciones sin código', 'Cuando un sobre se completa, rechaza o vence: mover a carpeta, enviar copia o avisar.'],
   ];
   const body = `${hero('DocSure vs. DocuSign', 'Todo lo que necesitás de una plataforma de firma electrónica, por menos.', '<a class="btn btn-primary btn-lg" href="/registro">Probar DocSure gratis</a>')}
 <section class="section section-tight"><div class="wrap narrow">

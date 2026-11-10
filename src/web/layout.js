@@ -12,12 +12,15 @@ const NAV = [
           ['/producto#firma', 'Firma electrónica', 'Enviá y firmá desde cualquier dispositivo'],
           ['/producto#preparacion', 'Preparación de documentos', 'Arrastrá campos sobre tu PDF en segundos'],
           ['/producto#sello', 'Sello digital y auditoría', 'Pruebas criptográficas en cada documento'],
-          ['/producto#plantillas', 'Plantillas y envío masivo', 'Cientos de sobres desde un CSV'],
+          ['/producto#contratos', 'Gestión de contratos', 'Vencimientos, renovaciones y versiones'],
+          ['/producto#ia', 'Asistente de IA', 'Resumen y datos clave de cada contrato'],
         ],
       },
       {
-        title: 'Integraciones y verificación',
+        title: 'Automatización e integraciones',
         items: [
+          ['/producto#automatizaciones', 'Automatizaciones', 'Reglas que trabajan solas'],
+          ['/producto#plantillas', 'Plantillas y envío masivo', 'Cientos de sobres desde un CSV'],
           ['/integraciones', 'Integraciones', 'API, webhooks, Zapier, Make y n8n'],
           ['/verificar', 'Verificador público', 'Comprobá si un documento fue alterado'],
           ['/desarrolladores', 'API y conexión con IA', 'Integrá DocSure en minutos'],

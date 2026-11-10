@@ -159,7 +159,8 @@ export const ARTICLES = [
 <li>En el detalle de un sobre, completá <strong>Vencimiento del contrato</strong> y, si querés, con cuántos días de anticipación avisarte.</li>
 <li>DocSure te manda un email antes de la fecha y el contrato aparece en <strong>Próximos vencimientos</strong> del panel.</li>
 <li>Para renovarlo o cambiarlo, tocá <strong>Nueva versión</strong>: se crea un borrador con los mismos documentos, firmantes y campos, y las versiones quedan enlazadas en el historial.</li>
-</ol>`],
+</ol>
+<p>El <strong>asistente de IA</strong> puede leer el contrato y proponerte la fecha de vencimiento: tocá <strong>Datos clave</strong> y después <strong>Usar como vencimiento</strong>.</p>`],
   ['automatizaciones', 'organizar', 'Automatizaciones: cuando pasa algo, hacé otra cosa', 'Reglas que trabajan solas sobre tus sobres.', `
 <ol>
 <li>Entrá a <strong>Automatizaciones</strong> en el panel.</li>
@@ -169,6 +170,14 @@ export const ARTICLES = [
 <li>Tocá <strong>Crear regla</strong>.</li>
 </ol>
 <p>Cada regla muestra cuántas veces se ejecutó; podés pausarla o borrarla cuando quieras. La copia firmada llega con un enlace de descarga que vence en 30 días. También podés crear reglas por API.</p>`],
+  ['asistente-ia', 'organizar', 'Asistente de IA para tus documentos', 'Resúmenes, datos clave y preguntas sobre cada contrato.', `
+<p>En el detalle de un sobre, abrí <strong>Asistente de IA</strong>:</p>
+<ul>
+<li><strong>Resumir</strong>: un resumen claro del documento y sus puntos de atención.</li>
+<li><strong>Datos clave</strong>: partes, montos, fechas, plazo y vencimiento. Con un clic usás el vencimiento detectado para el aviso de renovación.</li>
+<li><strong>Preguntar</strong>: hacé cualquier pregunta sobre el texto del documento.</li>
+</ul>
+<p>El asistente solo procesa el documento cuando vos lo pedís. Las respuestas son orientativas y no reemplazan asesoramiento legal.</p>`],
   ['equipo', 'cuenta', 'Trabajar en equipo', 'Invitá personas, asigná roles y compartí plantillas.', `
 <ol>
 <li>En <strong>Equipo</strong>, creá el equipo con un nombre.</li>
@@ -213,7 +222,7 @@ ${Object.entries(TOPICS).map(([key, name]) => `<div class="help-topic" data-topi
   <h2 class="section-title">¿No encontraste lo que buscabas?</h2>
   <p class="section-lead">Revisá las <a href="/precios#preguntas">preguntas frecuentes</a>, la <a href="/desarrolladores">documentación de la API</a> o el <a href="/blog">blog</a>.</p>
 </div></section>`;
-  return page({ config, user, path: '/ayuda', title: 'Centro de ayuda', description: 'Guías paso a paso de DocSure: enviar documentos, firmar, plantillas, carpetas, contratos, automatizaciones, equipo, seguridad y API.', body, scripts: ['/static/help.js'] });
+  return page({ config, user, path: '/ayuda', title: 'Centro de ayuda', description: 'Guías paso a paso de DocSure: enviar documentos, firmar, plantillas, contratos, automatizaciones, asistente de IA, equipo, seguridad y API.', body, scripts: ['/static/help.js'] });
 }
 
 export function helpArticle(config, user, slug) {

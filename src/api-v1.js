@@ -1,5 +1,6 @@
 import express from 'express';
 import * as account from './services/account.js';
+import * as ai from './services/ai.js';
 import * as keys from './services/apikeys.js';
 import * as attachments from './services/attachments.js';
 import * as automations from './services/automations.js';
@@ -175,6 +176,11 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
   router.post('/contacts', asyncRoute(async (req, res) => res.status(201).json(await contacts.createContact(ctx, req.apiUser.id, req.body || {}))));
   router.put('/contacts/:id', asyncRoute(async (req, res) => res.json(await contacts.updateContact(ctx, req.apiUser.id, req.params.id, req.body || {}))));
   router.delete('/contacts/:id', asyncRoute(async (req, res) => res.json(await contacts.deleteContact(ctx, req.apiUser.id, req.params.id))));
+
+  const aiLimit = (user) => limit(`ai:${user.id}`, user.plan === 'gratis' ? 10 : 60, 3600_000);
+  router.post('/envelopes/:id/ai/summary', asyncRoute(async (req, res) => { aiLimit(req.apiUser); res.json(await ai.analyze(ctx, req.apiUser.id, req.params.id, 'summary')); }));
+  router.post('/envelopes/:id/ai/extract', asyncRoute(async (req, res) => { aiLimit(req.apiUser); res.json(await ai.analyze(ctx, req.apiUser.id, req.params.id, 'extract')); }));
+  router.post('/envelopes/:id/ai/ask', asyncRoute(async (req, res) => { aiLimit(req.apiUser); res.json(await ai.ask(ctx, req.apiUser.id, req.params.id, req.body?.question)); }));
 
   router.get('/automations', asyncRoute(async (req, res) => res.json({ data: await automations.listAutomations(ctx, req.apiUser.id) })));
   router.post('/automations', asyncRoute(async (req, res) => res.status(201).json(await automations.createAutomation(ctx, req.apiUser.id, req.body || {}))));

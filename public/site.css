@@ -556,9 +556,22 @@ dialog::backdrop { background: rgba(12, 26, 46, .55); }
 /* v0.7: automatizaciones */
 .rule-builder { display: grid; gap: 12px; }
 .rule-step { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.rule-word { font-weight: 600; color: var(--muted); min-width: 150px; }
-.rule-step select, .rule-step input { font: inherit; padding: .5em .7em; border: 1px solid var(--line); border-radius: 8px; background: #fff; min-width: 200px; }
+.rule-word { font-weight: 600; color: var(--muted); flex: 0 0 170px; }
+.rule-step select, .rule-step input { display: inline-block; width: auto; flex: 1 1 200px; max-width: 320px; margin-top: 0; padding: .5em .7em; }
 .rule small { display: block; }
 .rule.is-paused { opacity: .6; }
-@media (min-width: 900px) { .detail-grid > #contract { grid-column: 2; grid-row: 1 / span 2; } }
-@media (max-width: 560px) { .rule-word { min-width: 0; width: 100%; } .rule-step select, .rule-step input { width: 100%; } }
+@media (max-width: 560px) { .rule-word { flex-basis: 100%; } .rule-step select, .rule-step input { max-width: none; } }
+
+/* v0.7: detalle en dos columnas y asistente de IA */
+.detail-col { display: grid; gap: 20px; align-content: start; min-width: 0; }
+.detail-col .card + .card { margin-top: 0; }
+.ai-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.ai-ask { display: flex; gap: 8px; }
+.ai-ask input { margin-top: 0; padding: .5em .7em; }
+.ai-out { margin-top: 12px; font-size: .93rem; }
+.ai-out ul { padding-left: 1.2em; margin: 4px 0 10px; }
+.ai-out .ai-warn li::marker { color: var(--accent); }
+.ai-data { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 6px 0 12px; }
+.ai-data dt { font-weight: 600; color: var(--muted); }
+.ai-data dd { margin: 0; }
+.ai-answer { white-space: pre-line; }

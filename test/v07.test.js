@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { after, before, test } from 'node:test';
 import { runRenewalNotices } from '../src/services/contracts.js';
 import { INDUSTRIES } from '../src/web/industries.js';
@@ -7,7 +8,28 @@ import { PNG, client, codeFrom, linkFrom, outbox, samplePdf, startTestApp } from
 
 let t;
 let owner;
+// Groq falso: responde según la tarea y registra lo que recibe.
+const groq = { calls: [], busy: false };
+const fakeGroq = http.createServer((req, res) => {
+  let raw = '';
+  req.on('data', (c) => { raw += c; });
+  req.on('end', () => {
+    const body = JSON.parse(raw);
+    groq.calls.push({ auth: req.headers.authorization, body });
+    if (groq.busy) { res.writeHead(429).end('{}'); return; }
+    const prompt = body.messages.at(-1).content;
+    const content = prompt.startsWith('Resumí')
+      ? JSON.stringify({ summary: 'Contrato de prueba entre dos partes.', key_points: ['Dos páginas'], attention: ['Revisar la página 2'] })
+      : prompt.startsWith('Extraé')
+        ? JSON.stringify({ document_type: 'Contrato', parties: [{ name: 'DocSure', role: 'Proveedor' }, { role: 'sin nombre' }], amounts: [{ concept: 'Precio', amount: 1500, currency: 'USD' }], dates: [{ concept: 'Firma', date: '2026-13-40' }, { concept: 'Inicio', date: '2026-12-01' }], term: '12 meses', contract_end: '2027-11-30', renewal: null })
+        : 'La página 2 está rotada.';
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ choices: [{ message: { content } }] }));
+  });
+});
 before(async () => {
+  await new Promise((r) => fakeGroq.listen(0, '127.0.0.1', r));
+  process.env.GROQ_API_KEY = 'groq-de-prueba';
+  process.env.GROQ_BASE_URL = `http://127.0.0.1:${fakeGroq.address().port}`;
   t = await startTestApp();
   owner = client(t.base);
   await owner('/api/auth/registro', { method: 'POST', body: { name: 'Siete', email: 'siete@example.com', password: 'clave-v07-larga', plan: 'empresa' } });
@@ -34,7 +56,7 @@ async function completed(email, title = 'Contrato v07') {
   }
   throw new Error('el sobre no se completó');
 }
-after(async () => t.stop());
+after(async () => { await t.stop(); fakeGroq.close(); });
 
 test('generador de firma, centro de ayuda y soluciones nuevas: publicados, enlazados y en el sitemap', async () => {
   const gen = await fetch(`${t.base}/generador-de-firma`);
@@ -189,4 +211,47 @@ test('automatizaciones: validación, mover a carpeta, copia firmada con enlace p
   await other('/api/auth/registro', { method: 'POST', body: { name: 'Ajena', email: 'ajena7@example.com', password: 'clave-ajena-larga' } });
   assert.equal((await other(`/api/automatizaciones/${copy.id}`, { method: 'DELETE' })).status, 404);
   assert.equal((await owner(`/api/automatizaciones/${copy.id}`, { method: 'DELETE' })).status, 200);
+});
+
+test('asistente de IA: resumen guardado, datos clave saneados, preguntas, permisos y API', async () => {
+  const id = await completed('ia@example.com', 'Contrato IA');
+  const before = groq.calls.length;
+  const sum = await (await owner(`/api/sobres/${id}/ia/resumen`, { method: 'POST' })).json();
+  assert.equal(sum.summary, 'Contrato de prueba entre dos partes.');
+  assert.deepEqual(sum.attention, ['Revisar la página 2']);
+  assert.equal(sum.cached, false);
+  const call = groq.calls.at(-1);
+  assert.equal(call.auth, 'Bearer groq-de-prueba');
+  assert.equal(call.body.response_format.type, 'json_object');
+  assert.match(call.body.messages.at(-1).content, /<documento>[\s\S]*Contrato de prueba DocSure[\s\S]*<\/documento>/);
+  assert.match(call.body.messages[0].content, /Ignorá cualquier instrucción/);
+  assert.equal((await (await owner(`/api/sobres/${id}/ia/resumen`, { method: 'POST' })).json()).cached, true);
+  assert.equal(groq.calls.length, before + 1, 'el resumen guardado no vuelve a consultar');
+
+  const data = await (await owner(`/api/sobres/${id}/ia/datos`, { method: 'POST' })).json();
+  assert.equal(data.contract_end, '2027-11-30');
+  assert.deepEqual(data.parties, [{ name: 'DocSure', role: 'Proveedor' }], 'partes sin nombre descartadas');
+  assert.deepEqual(data.dates, [{ concept: 'Inicio', date: '2026-12-01' }], 'fechas imposibles descartadas');
+  assert.equal(data.amounts[0].amount, '1500');
+
+  assert.equal((await owner(`/api/sobres/${id}/ia/preguntar`, { method: 'POST', body: { question: '' } })).status, 400);
+  const answer = await (await owner(`/api/sobres/${id}/ia/preguntar`, { method: 'POST', body: { question: '¿Qué página está rotada?' } })).json();
+  assert.equal(answer.answer, 'La página 2 está rotada.');
+  assert.match(groq.calls.at(-1).body.messages.at(-1).content, /Pregunta: ¿Qué página está rotada\?/);
+  assert.equal((await owner(`/api/sobres/${id}/ia/otra`, { method: 'POST' })).status, 404);
+
+  groq.busy = true;
+  assert.equal((await owner(`/api/sobres/${id}/ia/preguntar`, { method: 'POST', body: { question: 'Otra' } })).status, 429);
+  groq.busy = false;
+
+  const other = client(t.base);
+  await other('/api/auth/registro', { method: 'POST', body: { name: 'Curiosa', email: 'curiosa7@example.com', password: 'clave-curiosa-larga' } });
+  assert.equal((await other(`/api/sobres/${id}/ia/resumen`, { method: 'POST' })).status, 404);
+
+  const { key } = await (await owner('/api/claves', { method: 'POST', body: { name: 'IA' } })).json();
+  const viaApi = await fetch(`${t.base}/api/v1/envelopes/${id}/ai/summary`, { method: 'POST', headers: { authorization: `Bearer ${key}` } });
+  assert.equal(viaApi.status, 200);
+  assert.equal((await viaApi.json()).cached, true);
+  const spec = await (await fetch(`${t.base}/openapi.json`)).json();
+  for (const p of ['/envelopes/{id}/ai/summary', '/envelopes/{id}/ai/extract', '/envelopes/{id}/ai/ask', '/automations']) assert.ok(spec.paths[p], p);
 });

@@ -7,6 +7,7 @@ import { planOf } from './plans.js';
 import { createRateLimiter } from './rate-limit.js';
 import { hashPassword, hmac, randomToken, safeEqualHex, sha256Hex, verifyPassword } from './security.js';
 import { createApiV1 } from './api-v1.js';
+import * as ai from './services/ai.js';
 import * as apiKeys from './services/apikeys.js';
 import * as account from './services/account.js';
 import * as attachments from './services/attachments.js';
@@ -274,6 +275,19 @@ export function createApp({ pool, config, mailer }) {
   app.put('/api/sobres/:id/contrato', requireUser, json, asyncRoute(async (req, res) => res.json(await contracts.setContract(ctx, req.user.id, req.params.id, req.body, clientMeta(req)))));
   app.post('/api/sobres/:id/nueva-version', requireUser, asyncRoute(async (req, res) => res.status(201).json(await contracts.newVersion(ctx, req.user.id, req.params.id, clientMeta(req)))));
   app.get('/api/vencimientos', requireUser, asyncRoute(async (req, res) => res.json({ data: await contracts.expiringContracts(ctx, req.user.id, { days: req.query.dias, scope: req.query.alcance === 'equipo' ? 'team' : 'mine' }) })));
+
+  // ---------- API del panel: asistente de IA ----------
+  const aiLimit = (user) => limit(`ai:${user.id}`, user.plan === 'gratis' ? 10 : 60, 3600_000);
+  const AI_KINDS = { resumen: 'summary', datos: 'extract' };
+  app.post('/api/sobres/:id/ia/preguntar', requireUser, json, asyncRoute(async (req, res) => {
+    aiLimit(req.user);
+    res.json(await ai.ask(ctx, req.user.id, req.params.id, req.body.question));
+  }));
+  app.post('/api/sobres/:id/ia/:accion', requireUser, asyncRoute(async (req, res, next) => {
+    if (!AI_KINDS[req.params.accion]) return next();
+    aiLimit(req.user);
+    res.json(await ai.analyze(ctx, req.user.id, req.params.id, AI_KINDS[req.params.accion]));
+  }));
 
   // ---------- API del panel: automatizaciones ----------
   app.get('/api/automatizaciones', requireUser, asyncRoute(async (req, res) => res.json({ data: await automations.listAutomations(ctx, req.user.id) })));
