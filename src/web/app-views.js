@@ -152,7 +152,7 @@ export function editorPage(config, user) {
     <h1>Revisá y enviá</h1>
     <div id="review" class="review"></div>
     <div class="options-grid">
-      <label>Idioma para los firmantes<select id="opt-language"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option></select></label>
+      <label>Idioma para los firmantes<select id="opt-language"><option value="es">Español</option><option value="en">English</option><option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="it">Italiano</option></select></label>
       <label>Vence en<select id="opt-expire"><option value="7">7 días</option><option value="15">15 días</option><option value="30" selected>30 días</option><option value="60">60 días</option><option value="90">90 días</option><option value="120">120 días</option></select></label>
       <label>Recordatorios<select id="opt-reminder"><option value="0">Sin recordatorios</option><option value="1">Cada día</option><option value="2" selected>Cada 2 días</option><option value="3">Cada 3 días</option><option value="5">Cada 5 días</option><option value="7">Cada 7 días</option></select></label>
     </div>
@@ -310,7 +310,7 @@ export function accessPage(config) {
   <a class="logo" href="/" aria-label="DocSure, inicio">${LOGO_SVG}<span>DocSure</span></a>
   <h1>Firmar con código de acceso</h1>
   <p class="muted">Escribí el código de 12 caracteres que figura en tu invitación. Así llegás a tu documento sin tocar enlaces del email.</p>
-  <p class="muted small" lang="en">Sign with your access code · Assinar com código de acesso</p>
+  <p class="muted small" lang="en">Sign with your access code · Assinar com código de acesso · Signer avec votre code · Mit Zugangscode unterschreiben · Firma con il codice</p>
   <form id="access-form" novalidate>
     <label for="access-code">Código de acceso</label>
     <input id="access-code" class="otp-input access-input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="14" placeholder="XXXX-XXXX-XXXX" required>

@@ -237,7 +237,7 @@ Cuerpo JSON:
 - message (string, opcional): mensaje para los firmantes.
 - sequential (bool, opcional): true = firman en orden según "order".
 - send (bool, opcional, por defecto true): false deja el sobre como borrador.
-- language (opcional): "es" | "en" | "pt". Idioma de los emails y de la pantalla de firma.
+- language (opcional): "es" | "en" | "pt" | "fr" | "de" | "it". Idioma de los emails y de la pantalla de firma.
 - expire_days (opcional, 1-120, por defecto 30): días hasta que vence el sobre.
 - reminder_days (opcional, 0 | 1 | 2 | 3 | 5 | 7, por defecto 0): cada cuántos días recordar a quien no firmó (máx. 5 recordatorios).
 
@@ -364,7 +364,7 @@ export function openapiSpec(config) {
             fields: { type: 'array', items: { $ref: '#/components/schemas/Field' }, description: 'Opcional. Sin fields se ubican firma y fecha al pie de la última página.' },
             sequential: { type: 'boolean', default: false },
             send: { type: 'boolean', default: true },
-            language: { type: 'string', enum: ['es', 'en', 'pt'], default: 'es' },
+            language: { type: 'string', enum: ['es', 'en', 'pt', 'fr', 'de', 'it'], default: 'es' },
             expire_days: { type: 'integer', minimum: 1, maximum: 120, default: 30 },
             reminder_days: { type: 'integer', enum: [0, 1, 2, 3, 5, 7], default: 0 },
             delivery: { type: 'string', enum: ['email', 'embedded'], default: 'email', description: 'embedded: sin emails de invitación; la respuesta incluye signing_urls para mostrar la firma en tu sitio.' },
@@ -414,7 +414,7 @@ export function openapiSpec(config) {
       '/envelopes/{id}/correct': { post: { summary: 'Corregir: anula y crea un borrador idéntico', security: auth, parameters: [idParam], responses: { 201: envResp, 409: err } } },
       '/envelopes/{id}/extend': { post: { summary: 'Extender vencimiento', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['days'], properties: { days: { type: 'integer', minimum: 1, maximum: 120 } } } } } }, responses: { 200: envResp, 409: err } } },
       '/templates': { get: { summary: 'Listar plantillas', security: auth, responses: { 200: { description: 'Lista con roles' } } } },
-      '/templates/{id}/envelopes': { post: { summary: 'Crear y enviar desde una plantilla', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['recipients'], properties: { recipients: { type: 'array', items: { $ref: '#/components/schemas/Recipient' } }, title: { type: 'string' }, message: { type: 'string' }, language: { type: 'string', enum: ['es', 'en', 'pt'] }, expire_days: { type: 'integer' }, reminder_days: { type: 'integer' }, send: { type: 'boolean', default: true } } } } } }, responses: { 201: envResp, 400: err, 402: err } } },
+      '/templates/{id}/envelopes': { post: { summary: 'Crear y enviar desde una plantilla', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['recipients'], properties: { recipients: { type: 'array', items: { $ref: '#/components/schemas/Recipient' } }, title: { type: 'string' }, message: { type: 'string' }, language: { type: 'string', enum: ['es', 'en', 'pt', 'fr', 'de', 'it'] }, expire_days: { type: 'integer' }, reminder_days: { type: 'integer' }, send: { type: 'boolean', default: true } } } } } }, responses: { 201: envResp, 400: err, 402: err } } },
       '/templates/{id}/bulk': { post: { summary: 'Envío masivo desde una plantilla de un firmante', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['rows'], properties: { rows: { type: 'array', maxItems: 200, items: { type: 'object', properties: { name: { type: 'string' }, email: { type: 'string', format: 'email' } } } } } } } } }, responses: { 200: { description: 'Resultado por fila' }, 400: err } } },
       '/team': { get: { summary: 'Equipo, rol y miembros', security: auth, responses: { 200: { description: 'Equipo o team: null' } } } },
       '/folders': {

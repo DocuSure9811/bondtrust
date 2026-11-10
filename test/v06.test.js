@@ -195,3 +195,16 @@ test('firma embebida: dominios, enlaces por API, iframe autorizado, sin email y 
   assert.match(js.headers.get('content-type'), /javascript/);
   assert.match(await js.text(), /docsure-signing/);
 });
+
+test('idiomas nuevos: francés, alemán e italiano en emails y firma', async () => {
+  for (const [lang, re] of [['fr', /vous demande de signer/], ['de', /bittet Sie um Ihre Unterschrift/], ['it', /ti chiede di firmare/]]) {
+    const email = `idioma-${lang}@example.com`;
+    const { id } = await (await owner('/api/sobres?title=Idioma', { method: 'POST', body: await samplePdf() })).json();
+    await owner(`/api/sobres/${id}`, { method: 'PUT', body: { title: 'Idioma', language: lang, recipients: [{ key: 's', name: 'Persona', email }], fields: [F({ type: 'signature', h: 0.06 })] } });
+    assert.equal((await owner(`/api/sobres/${id}/enviar`, { method: 'POST', headers: { 'idempotency-key': `l-${id}` } })).status, 200);
+    const { rows: [m] } = await t.pool.query(`SELECT subject FROM emails WHERE to_email = $1 AND kind = 'invite'`, [email]);
+    assert.match(m.subject, re, lang);
+    const token = linkFrom((await outbox(t.pool, 'invite', email))[0]);
+    assert.equal((await (await client(t.base)(`/api/firmar/${token}`)).json()).language, lang);
+  }
+});

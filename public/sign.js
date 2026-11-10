@@ -52,7 +52,7 @@ function header() {
       setLang(l);
     });
   }
-  sw.innerHTML = ['es', 'en', 'pt'].map((l) => `<button type="button" data-lang="${l}" aria-pressed="${l === lang}">${l.toUpperCase()}</button>`).join('');
+  sw.innerHTML = ['es', 'en', 'pt', 'fr', 'de', 'it'].map((l) => `<button type="button" data-lang="${l}" aria-pressed="${l === lang}">${l.toUpperCase()}</button>`).join('');
   document.documentElement.lang = lang;
 }
 
