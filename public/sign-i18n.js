@@ -1,6 +1,7 @@
 /** Textos de la experiencia de firma en español, inglés y portugués. */
 export const DICT = {
   es: {
+    chooseOption: 'Elegí una opción', invalidFormat: 'Revisá el formato del campo marcado.',
     pageWord: { page: 'Página', of: 'de' },
     cantSign: 'No podés firmar con este enlace', knowDocsure: 'Conocé DocSure', sentBy: (s) => `Enviado por ${s}`,
     hello: (n) => `Hola ${n}`, sentYou: (s, t) => `<strong>${s}</strong> te envió <strong>${t}</strong> para firmar.`,
@@ -23,6 +24,7 @@ export const DICT = {
     errors: {},
   },
   en: {
+    chooseOption: 'Choose an option', invalidFormat: 'Check the format of the highlighted field.',
     pageWord: { page: 'Page', of: 'of' },
     cantSign: 'You can’t sign with this link', knowDocsure: 'About DocSure', sentBy: (s) => `Sent by ${s}`,
     hello: (n) => `Hi ${n}`, sentYou: (s, t) => `<strong>${s}</strong> sent you <strong>${t}</strong> to sign.`,
@@ -51,6 +53,7 @@ export const DICT = {
     },
   },
   pt: {
+    chooseOption: 'Escolha uma opção', invalidFormat: 'Revise o formato do campo destacado.',
     pageWord: { page: 'Página', of: 'de' },
     cantSign: 'Você não pode assinar com este link', knowDocsure: 'Conheça a DocSure', sentBy: (s) => `Enviado por ${s}`,
     hello: (n) => `Olá ${n}`, sentYou: (s, t) => `<strong>${s}</strong> enviou <strong>${t}</strong> para você assinar.`,

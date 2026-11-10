@@ -102,12 +102,18 @@ export function editorPage(config, user) {
           <button type="button" data-type="signature" class="active">Firma</button><button type="button" data-type="initials">Iniciales</button>
           <button type="button" data-type="date">Fecha de firma</button><button type="button" data-type="name">Nombre</button>
           <button type="button" data-type="email">Email</button><button type="button" data-type="text">Texto</button>
-          <button type="button" data-type="checkbox">Casilla</button>
+          <button type="button" data-type="checkbox">Casilla</button><button type="button" data-type="select">Lista</button>
         </div>
         <div id="selected-props" class="props" hidden>
-          <p class="props-title">Campo seleccionado</p>
+          <p class="props-title" id="prop-title">Campo seleccionado</p>
           <label class="switch"><input type="checkbox" id="prop-required"> Obligatorio</label>
           <label>Etiqueta<input id="prop-label" maxlength="60"></label>
+          <label id="prop-format-wrap" hidden>Formato<select id="prop-format"><option value="">Texto libre</option><option value="email">Email</option><option value="number">Número</option><option value="id">Documento de identidad</option><option value="phone">Teléfono</option></select></label>
+          <label id="prop-options-wrap" hidden>Opciones <span class="muted">(una por línea)</span><textarea id="prop-options" rows="4" maxlength="2500"></textarea></label>
+          <div id="prop-cond-wrap" hidden>
+            <label>Mostrar este campo<select id="prop-cond-field"></select></label>
+            <div id="prop-cond-value"></div>
+          </div>
           <button class="btn btn-danger btn-sm" type="button" id="prop-delete">Eliminar campo</button>
         </div>
         <p class="form-error" role="alert" id="err3"></p>

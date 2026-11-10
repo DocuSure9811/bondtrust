@@ -151,3 +151,126 @@ test('varios documentos por API v1', async () => {
   assert.equal(f.page, 4, 'la firma automática va en la última página del último documento');
   assert.equal((await signer(`/api/firmar/${token}/campos`, { headers: { 'x-sign-session': 'x' } })).status, 401, 'sin sesión no hay campos');
 });
+
+// ---------- Campos: listas, formatos y condiciones ----------
+
+const F = (o) => ({ recipientKey: 's', page: 1, x: 0.1, y: 0.1, w: 0.2, h: 0.03, ...o });
+const COND_FIELDS = [
+  F({ key: 'sig', type: 'signature', h: 0.06 }),
+  F({ key: 'c', type: 'checkbox', label: 'Tiene DNI', y: 0.2, w: 0.03, h: 0.02 }),
+  F({ key: 't', type: 'text', label: 'DNI', validation: 'id', y: 0.25, showIf: { key: 'c', equals: 'true' } }),
+  F({ key: 's', type: 'select', label: 'Acepta', options: ['Sí', 'No', 'Sí'], y: 0.3 }),
+  F({ key: 'u', type: 'text', label: 'Email alternativo', validation: 'email', y: 0.35, showIf: { key: 's', equals: 'No' } }),
+];
+
+async function condDraft(email, fields = COND_FIELDS) {
+  const { id } = await (await owner('/api/sobres?title=Condicional', { method: 'POST', body: await samplePdf() })).json();
+  const res = await owner(`/api/sobres/${id}`, { method: 'PUT', body: { title: 'Condicional', recipients: [{ key: 's', name: 'Cond Firmante', email }, { key: 'o', name: 'Otro', email: `otro-${email}` }], fields } });
+  return { id, res };
+}
+
+async function openForSigning(email) {
+  const signer = client(t.base);
+  const token = linkFrom((await outbox(t.pool, 'invite', email)).at(-1));
+  await signer(`/api/firmar/${token}/codigo`, { method: 'POST' });
+  const code = codeFrom((await outbox(t.pool, 'otp', email)).at(-1));
+  const { session } = await (await signer(`/api/firmar/${token}/verificar`, { method: 'POST', body: { code } })).json();
+  const { fields } = await (await signer(`/api/firmar/${token}/campos`, { headers: { 'x-sign-session': session } })).json();
+  const byLabel = Object.fromEntries(fields.filter((f) => f.label).map((f) => [f.label, f]));
+  const sign = (values) => signer(`/api/firmar/${token}/firmar`, { method: 'POST', headers: { 'x-sign-session': session }, body: { signature: PNG, consent: true, values } });
+  return { byLabel, sign, fields };
+}
+
+test('campos: validaciones del editor (listas, formatos, condiciones y ciclos)', async () => {
+  const bad = async (fields, msg) => {
+    const { res } = await condDraft('val@example.com', [F({ key: 'sig', type: 'signature' }), ...fields]);
+    assert.equal(res.status, 400, msg);
+    return (await res.json()).error;
+  };
+  await bad([F({ type: 'select', options: [] })], 'lista sin opciones');
+  await bad([F({ type: 'text', validation: 'cuit' })], 'formato desconocido');
+  await bad([F({ key: 'x', type: 'checkbox' }), F({ key: 'sig2', type: 'signature', showIf: { key: 'x', equals: 'true' } })], 'firma condicional');
+  await bad([F({ key: 'a', type: 'text', showIf: { key: 'b', equals: 'x' } }), F({ key: 'b', type: 'text', showIf: { key: 'a', equals: 'y' } })], 'ciclo');
+  await bad([F({ key: 'x', type: 'checkbox' }), F({ type: 'text', showIf: { key: 'x', equals: 'quizás' } })], 'casilla con valor inválido');
+  await bad([F({ key: 'x', type: 'select', options: ['A'] }), F({ type: 'text', showIf: { key: 'x', equals: 'B' } })], 'opción inexistente');
+  await bad([F({ key: 'x', type: 'checkbox', recipientKey: 'o' }), F({ key: 'sigo', type: 'signature', recipientKey: 'o' }), F({ type: 'text', showIf: { key: 'x', equals: 'true' } })], 'condición de otro firmante');
+  await bad([F({ key: 'x', type: 'date' }), F({ type: 'text', showIf: { key: 'x', equals: 'hoy' } })], 'una fecha no controla');
+  await bad([F({ type: 'text', showIf: { key: 'nada', equals: 'x' } })], 'condición a un campo inexistente');
+});
+
+test('campos condicionales: los ocultos no se exigen y los visibles se validan', async () => {
+  const sig2 = F({ key: 'sigo', type: 'signature', recipientKey: 'o', y: 0.6 });
+  const { id, res } = await condDraft('cond1@example.com', [...COND_FIELDS, sig2]);
+  assert.equal(res.status, 200, await res.clone().text());
+  const detail = await (await owner(`/api/sobres/${id}`)).json();
+  const sel = detail.fields.find((f) => f.type === 'select');
+  assert.deepEqual(sel.options, ['Sí', 'No'], 'opciones sin repetir');
+  assert.ok(detail.fields.find((f) => f.label === 'DNI').cond_field_id, 'condición guardada');
+  assert.equal((await owner(`/api/sobres/${id}/enviar`, { method: 'POST', headers: { 'idempotency-key': `c1-${id}` } })).status, 200);
+
+  // Caso 1: casilla sin marcar y "Sí": DNI y email alternativo quedan ocultos.
+  const a = await openForSigning('cond1@example.com');
+  assert.equal(a.byLabel.DNI.cond_value, 'true');
+  assert.equal((await a.sign({})).status, 400, 'la lista es obligatoria');
+  assert.equal((await a.sign({ [a.byLabel.Acepta.id]: 'Quizás' })).status, 400, 'opción inexistente');
+  assert.equal((await a.sign({ [a.byLabel.Acepta.id]: 'Sí', [a.byLabel.DNI.id]: 'ignorado' })).status, 200);
+  const { rows } = await t.pool.query('SELECT label, value FROM fields WHERE envelope_id = $1 AND label <> \'\'', [id]);
+  const v = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+  assert.equal(v.Acepta, 'Sí');
+  assert.equal(v.DNI, null, 'un campo oculto no guarda valor aunque lo manden');
+  assert.equal(v['Email alternativo'], null);
+  assert.equal(v['Tiene DNI'], 'false');
+
+  // Caso 2: casilla marcada y "No": DNI y email alternativo pasan a ser obligatorios y con formato.
+  const { id: id2 } = await condDraft('cond2@example.com');
+  await owner(`/api/sobres/${id2}`, { method: 'PUT', body: { title: 'Condicional', recipients: [{ key: 's', name: 'Cond Dos', email: 'cond2@example.com' }], fields: COND_FIELDS } });
+  assert.equal((await owner(`/api/sobres/${id2}/enviar`, { method: 'POST', headers: { 'idempotency-key': `c2-${id2}` } })).status, 200);
+  const b = await openForSigning('cond2@example.com');
+  const base = { [b.byLabel['Tiene DNI'].id]: true, [b.byLabel.Acepta.id]: 'No' };
+  assert.equal((await b.sign(base)).status, 400, 'faltan los campos que aparecieron');
+  const badDni = await b.sign({ ...base, [b.byLabel.DNI.id]: '12', [b.byLabel['Email alternativo'].id]: 'a@b.co' });
+  assert.equal(badDni.status, 400);
+  assert.match((await badDni.json()).error, /documento/);
+  assert.equal((await b.sign({ ...base, [b.byLabel.DNI.id]: '30.111.222', [b.byLabel['Email alternativo'].id]: 'sin-arroba' })).status, 400);
+  assert.equal((await b.sign({ ...base, [b.byLabel.DNI.id]: '30.111.222', [b.byLabel['Email alternativo'].id]: 'alt@example.com' })).status, 200);
+  const { rows: [env] } = await t.pool.query('SELECT status FROM envelopes WHERE id = $1', [id2]);
+  assert.equal(env.status, 'completed');
+
+  // Plantilla y corrección conservan listas, formatos y condiciones.
+  const tpl = await (await owner('/api/plantillas', { method: 'POST', body: { envelopeId: id2, name: 'Cond tpl' } })).json();
+  const used = await (await owner(`/api/plantillas/${tpl.id}/usar`, { method: 'POST', body: { recipients: [{ name: 'Tpl Cond', email: 'tplcond@example.com' }] } })).json();
+  const fromTpl = (await (await owner(`/api/sobres/${used.id}`)).json()).fields;
+  assert.equal(fromTpl.filter((f) => f.cond_field_id).length, 2);
+  assert.equal(fromTpl.find((f) => f.label === 'DNI').validation, 'id');
+  const dniParent = fromTpl.find((f) => f.id === fromTpl.find((x) => x.label === 'DNI').cond_field_id);
+  assert.equal(dniParent.label, 'Tiene DNI', 'la condición apunta al campo copiado');
+  assert.equal((await owner(`/api/sobres/${used.id}/enviar`, { method: 'POST', headers: { 'idempotency-key': `tpl-${used.id}` } })).status, 200);
+  const corrected = await (await owner(`/api/sobres/${used.id}/corregir`, { method: 'POST' })).json();
+  const fromCorrection = (await (await owner(`/api/sobres/${corrected.id}`)).json()).fields;
+  assert.equal(fromCorrection.filter((f) => f.cond_field_id).length, 2, 'la corrección conserva las condiciones');
+  assert.deepEqual(fromCorrection.find((f) => f.type === 'select').options, ['Sí', 'No']);
+});
+
+test('campos condicionales por API v1', async () => {
+  const { key } = await (await owner('/api/claves', { method: 'POST', body: { name: 'cond' } })).json();
+  const b64 = (await samplePdf()).toString('base64');
+  const res = await fetch(`${t.base}/api/v1/envelopes`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      title: 'API cond', document_base64: b64, recipients: [{ name: 'Api Cond', email: 'apicond@example.com' }],
+      fields: [
+        { recipient: 0, type: 'signature', page: 1, x: 0.1, y: 0.1, width: 0.3, height: 0.06 },
+        { recipient: 0, key: 'plan', type: 'select', options: ['Mensual', 'Anual'], page: 1, x: 0.1, y: 0.2, width: 0.3, height: 0.03 },
+        { recipient: 0, type: 'text', label: 'CUIT', validation: 'number', show_if: { field: 'plan', equals: 'Anual' }, page: 1, x: 0.1, y: 0.3, width: 0.3, height: 0.03 },
+      ],
+    }),
+  });
+  assert.equal(res.status, 201, await res.clone().text());
+  const a = await openForSigning('apicond@example.com');
+  const plan = a.fields.find((f) => f.type === 'select');
+  assert.equal((await a.sign({ [plan.id]: 'Anual' })).status, 400, 'con Anual el CUIT es obligatorio');
+  assert.equal((await a.sign({ [plan.id]: 'Anual', [a.byLabel.CUIT.id]: '20301112223' })).status, 200);
+  const spec = await (await fetch(`${t.base}/openapi.json`)).json();
+  assert.ok(spec.components.schemas.Field.properties.show_if);
+});

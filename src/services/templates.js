@@ -1,4 +1,5 @@
 import { randomToken } from '../security.js';
+import { fieldsAsInput } from './fields.js';
 import { HttpError, cleanText } from '../validate.js';
 import { createDraft, documentsOf, saveDraft, sendEnvelope } from './envelopes.js';
 
@@ -27,8 +28,8 @@ export async function saveTemplate(ctx, ownerId, envelopeId, name) {
     role: r.role,
     order: r.routing_order,
   }));
-  const { rows: fields } = await ctx.pool.query('SELECT recipient_id, type, page, x, y, w, h, required, label FROM fields WHERE envelope_id = $1', [envelopeId]);
-  const tplFields = fields.map((f) => ({ role: index.get(f.recipient_id), type: f.type, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h, required: f.required, label: f.label }));
+  const { rows: fields } = await ctx.pool.query('SELECT id, recipient_id, type, page, x, y, w, h, required, label, options, validation, cond_field_id, cond_value FROM fields WHERE envelope_id = $1', [envelopeId]);
+  const tplFields = fieldsAsInput(fields, (f) => index.get(f.recipient_id)).map(({ recipientKey, ...f }) => ({ role: recipientKey, ...f }));
   const { rows: [tpl] } = await ctx.pool.query(
     `INSERT INTO templates (owner_id, name, message, sequential, language, pdf, page_count, roles, fields, documents)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, name, created_at`,
@@ -82,7 +83,7 @@ export async function useTemplate(ctx, owner, templateId, body, meta, idempotenc
       expire_days: body.expire_days,
       reminder_days: body.reminder_days,
       recipients: tpl.roles.map((role, i) => ({ key: `r${i}`, name: recipientsIn[i]?.name, email: recipientsIn[i]?.email, role: role.role, order: role.order })),
-      fields: tpl.fields.map((f) => ({ recipientKey: `r${f.role}`, type: f.type, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h, required: f.required, label: f.label })),
+      fields: tpl.fields.map(({ role, ...f }) => ({ ...f, recipientKey: `r${role}` })),
     });
     if (body.send) await sendEnvelope(ctx, owner, id, idempotencyKey || randomToken(16), meta);
   } catch (err) {

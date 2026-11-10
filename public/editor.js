@@ -2,8 +2,9 @@ import { api, esc } from './app-common.js';
 import { pageLabeler, renderPdf } from './pdfview.js';
 
 const COLORS = ['--signer-0', '--signer-1', '--signer-2', '--signer-3', '--signer-4', '--signer-5'];
-const TYPE_LABEL = { signature: 'Firma', initials: 'Iniciales', date: 'Fecha', name: 'Nombre', email: 'Email', text: 'Texto', checkbox: '☐' };
-const DEFAULT_SIZE = { signature: [0.26, 0.06], initials: [0.1, 0.05], date: [0.18, 0.03], name: [0.26, 0.03], email: [0.3, 0.03], text: [0.26, 0.03], checkbox: [0.028, 0.02] };
+const TYPE_LABEL = { signature: 'Firma', initials: 'Iniciales', date: 'Fecha', name: 'Nombre', email: 'Email', text: 'Texto', checkbox: '☐', select: 'Lista' };
+const DEFAULT_SIZE = { signature: [0.26, 0.06], initials: [0.1, 0.05], date: [0.18, 0.03], name: [0.26, 0.03], email: [0.3, 0.03], text: [0.26, 0.03], checkbox: [0.028, 0.02], select: [0.26, 0.03] };
+const CONTROL_TYPES = new Set(['checkbox', 'select', 'text']);
 
 const state = {
   id: null,
@@ -57,7 +58,7 @@ async function saveDraft() {
       expire_days: Number($('opt-expire').value),
       reminder_days: Number($('opt-reminder').value),
       recipients: state.recipients.map((r, i) => ({ key: r.key, name: r.name, email: r.email, role: r.role, order: state.sequential ? Number(r.order) || i + 1 : 1 })),
-      fields: state.fields.map(({ recipientKey, type, page, x, y, w, h, required, label }) => ({ recipientKey, type, page, x, y, w, h, required, label })),
+      fields: state.fields.map(({ id, recipientKey, type, page, x, y, w, h, required, label, options, validation, showIf }) => ({ key: id, recipientKey, type, page, x, y, w, h, required, label, options, validation, showIf: showIf && state.fields.some((p) => p.id === showIf.key) ? showIf : null })),
     },
   });
 }
@@ -308,7 +309,8 @@ function drawFields() {
     el.style.cssText = `left:${f.x * 100}%;top:${f.y * 100}%;width:${f.w * 100}%;height:${f.h * 100}%;--c:${colorOf(f.recipientKey)}`;
     const who = state.recipients.find((r) => r.key === f.recipientKey);
     el.title = `${TYPE_LABEL[f.type]} · ${who?.name || ''}`;
-    el.textContent = f.type === 'checkbox' ? '✓' : `${TYPE_LABEL[f.type]}${f.required ? '' : ' (opc.)'}`;
+    el.textContent = `${f.showIf ? '⤷ ' : ''}${f.type === 'checkbox' ? '✓' : `${TYPE_LABEL[f.type]}${f.required ? '' : ' (opc.)'}`}`;
+    if (f.showIf) el.classList.add('conditional');
     const handle = document.createElement('span');
     handle.className = 'resize';
     el.appendChild(handle);
@@ -317,13 +319,79 @@ function drawFields() {
   renderProps();
 }
 
+const selectedField = () => state.fields.find((x) => x.id === state.selected);
+const fieldName = (f) => f.label || `${f.type === 'checkbox' ? 'Casilla' : TYPE_LABEL[f.type]} (pág. ${f.page})`;
+
 function renderProps() {
-  const f = state.fields.find((x) => x.id === state.selected);
+  const f = selectedField();
   $('selected-props').hidden = !f;
   if (!f) return;
   $('prop-required').checked = f.required;
   $('prop-label').value = f.label;
+  $('prop-format-wrap').hidden = f.type !== 'text';
+  $('prop-format').value = f.validation || '';
+  $('prop-options-wrap').hidden = f.type !== 'select';
+  if (f.type === 'select') $('prop-options').value = (f.options || []).join('\n');
+  // Condición: la controla una casilla, lista o texto del mismo firmante (la firma siempre se ve).
+  const controllers = state.fields.filter((c) => c !== f && c.recipientKey === f.recipientKey && CONTROL_TYPES.has(c.type) && !dependsOn(c, f.id));
+  $('prop-cond-wrap').hidden = f.type === 'signature';
+  $('prop-cond-field').innerHTML = `<option value="">Siempre</option>${controllers.map((c) => `<option value="${c.id}"${f.showIf?.key === c.id ? ' selected' : ''}>Solo si “${esc(fieldName(c))}”…</option>`).join('')}`;
+  renderCondValue(f);
 }
+
+/** ¿El campo c depende (directa o indirectamente) del campo con ese id? Evita ciclos. */
+function dependsOn(c, id) {
+  for (let cur = c, n = 0; cur?.showIf && n < 50; n += 1) {
+    if (cur.showIf.key === id) return true;
+    cur = state.fields.find((x) => x.id === cur.showIf.key);
+  }
+  return false;
+}
+
+function renderCondValue(f) {
+  const box = $('prop-cond-value');
+  const parent = f.showIf && state.fields.find((x) => x.id === f.showIf.key);
+  if (!parent) {
+    box.innerHTML = '';
+    return;
+  }
+  const v = f.showIf.equals;
+  if (parent.type === 'checkbox') {
+    box.innerHTML = `<label>…está<select id="prop-cond-eq"><option value="true"${v === 'true' ? ' selected' : ''}>marcada</option><option value="false"${v === 'false' ? ' selected' : ''}>sin marcar</option></select></label>`;
+  } else if (parent.type === 'select') {
+    box.innerHTML = `<label>…es<select id="prop-cond-eq">${(parent.options || []).map((o) => `<option${o === v ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`;
+  } else {
+    box.innerHTML = `<label>…es igual a<input id="prop-cond-eq" maxlength="80" value="${esc(v)}"></label>`;
+  }
+}
+
+$('prop-format').addEventListener('change', (e) => {
+  const f = selectedField();
+  if (f) f.validation = e.target.value || null;
+});
+$('prop-options').addEventListener('input', (e) => {
+  const f = selectedField();
+  if (!f) return;
+  f.options = [...new Set(e.target.value.split('\n').map((o) => o.trim().slice(0, 80)).filter(Boolean))].slice(0, 30);
+  // Las condiciones que usaban una opción borrada pasan a la primera opción disponible.
+  state.fields.filter((d) => d.showIf?.key === f.id && !f.options.includes(d.showIf.equals)).forEach((d) => { d.showIf.equals = f.options[0] || ''; });
+});
+$('prop-cond-field').addEventListener('change', (e) => {
+  const f = selectedField();
+  if (!f) return;
+  const parent = state.fields.find((x) => x.id === e.target.value);
+  f.showIf = parent ? { key: parent.id, equals: parent.type === 'checkbox' ? 'true' : parent.type === 'select' ? (parent.options || [])[0] || '' : '' } : null;
+  drawFields();
+});
+$('prop-cond-value').addEventListener('input', (e) => {
+  const f = selectedField();
+  if (f?.showIf && e.target.id === 'prop-cond-eq') f.showIf.equals = e.target.value.slice(0, 80);
+});
+$('prop-cond-value').addEventListener('change', (e) => {
+  const f = selectedField();
+  if (f?.showIf && e.target.id === 'prop-cond-eq') f.showIf.equals = e.target.value;
+});
+
 $('prop-required').addEventListener('change', (e) => {
   const f = state.fields.find((x) => x.id === state.selected);
   if (f) { f.required = e.target.checked; drawFields(); }
@@ -334,6 +402,7 @@ $('prop-label').addEventListener('input', (e) => {
 });
 function deleteSelected() {
   state.fields = state.fields.filter((x) => x.id !== state.selected);
+  state.fields.forEach((d) => { if (d.showIf?.key === state.selected) d.showIf = null; });
   state.selected = null;
   drawFields();
 }
@@ -392,6 +461,9 @@ function onPagePointerDown(e) {
     h,
     required: state.activeType !== 'checkbox',
     label: '',
+    options: state.activeType === 'select' ? ['Opción 1', 'Opción 2'] : null,
+    validation: null,
+    showIf: null,
   };
   state.fields.push(f);
   state.selected = f.id;
@@ -403,6 +475,8 @@ $('to-review').addEventListener('click', async () => {
   err.textContent = '';
   const missing = state.recipients.filter((r) => r.role === 'signer' && !state.fields.some((f) => f.recipientKey === r.key && f.type === 'signature'));
   if (missing.length) return void (err.textContent = `Falta un campo de firma para: ${missing.map((m) => m.name).join(', ')}.`);
+  if (state.fields.some((f) => f.type === 'select' && !f.options?.length)) return void (err.textContent = 'Cada lista necesita al menos una opción.');
+  if (state.fields.some((f) => f.showIf && !f.showIf.equals)) return void (err.textContent = 'Completá el valor de cada condición.');
   try {
     await saveDraft();
     go(4);
@@ -472,9 +546,11 @@ if (draftId) {
       $('opt-reminder').value = String(envelope.reminder_days ?? 2);
       recipients.forEach((r) => addRecipient({ name: r.name, email: r.email, role: r.role, order: r.routing_order }));
       state.fields = fields.map((f) => ({
-        id: crypto.randomUUID(),
+        id: f.id,
         recipientKey: state.recipients[f.recipient_index]?.key,
         type: f.type, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h, required: f.required, label: f.label,
+        options: f.options, validation: f.validation,
+        showIf: f.cond_field_id ? { key: f.cond_field_id, equals: f.cond_value } : null,
       })).filter((f) => f.recipientKey);
       if (state.recipients.length === 0) addRecipient();
       go(2);

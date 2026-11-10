@@ -187,6 +187,14 @@ CREATE INDEX IF NOT EXISTS templates_owner_idx ON templates (owner_id, created_a
 ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS documents jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE templates ADD COLUMN IF NOT EXISTS documents jsonb NOT NULL DEFAULT '[]'::jsonb;
 
+-- v0.5: listas, validaciones y campos condicionales
+ALTER TABLE fields DROP CONSTRAINT IF EXISTS fields_type_check;
+ALTER TABLE fields ADD CONSTRAINT fields_type_check CHECK (type IN ('signature', 'initials', 'date', 'name', 'email', 'text', 'checkbox', 'select', 'attachment'));
+ALTER TABLE fields ADD COLUMN IF NOT EXISTS options jsonb;
+ALTER TABLE fields ADD COLUMN IF NOT EXISTS validation text;
+ALTER TABLE fields ADD COLUMN IF NOT EXISTS cond_field_id uuid REFERENCES fields(id) ON DELETE SET NULL;
+ALTER TABLE fields ADD COLUMN IF NOT EXISTS cond_value text;
+
 -- v0.5: contactos
 CREATE TABLE IF NOT EXISTS contacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

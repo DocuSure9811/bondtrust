@@ -6,6 +6,7 @@ import { planOf } from '../plans.js';
 import { hmac, maskEmail, newOtp, randomToken, safeEqualHex, sha256Hex } from '../security.js';
 import { HttpError, cleanEmail, cleanNumber, cleanPngDataUrl, cleanText } from '../validate.js';
 import { rememberRecipients } from './contacts.js';
+import { VALIDATIONS, cleanFields, fieldsAsInput, insertFields, visibleFields } from './fields.js';
 import { emitEnvelopeEvent } from './webhooks.js';
 
 /** Notifica a los webhooks en segundo plano; nunca bloquea ni rompe el flujo principal. */
@@ -22,7 +23,6 @@ const OTP_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_RESEND_SECONDS = 30;
 const SIGN_SESSION_MINUTES = 30;
-const FIELD_TYPES = new Set(['signature', 'initials', 'date', 'name', 'email', 'text', 'checkbox']);
 const AUTO_FIELDS = new Set(['date', 'name', 'email']);
 
 async function addEvent(db, envelopeId, type, { recipientId = null, ip = null, userAgent = null, data = {} } = {}) {
@@ -195,26 +195,7 @@ export async function saveDraft(ctx, ownerId, id, body) {
       };
     });
 
-    const fields = fieldsIn.map((f) => {
-      if (!FIELD_TYPES.has(f.type)) throw new HttpError(400, 'Tipo de campo inválido.', 'validation');
-      const recipient = recipients.find((r) => r.key === f.recipientKey);
-      if (!recipient || recipient.role !== 'signer') throw new HttpError(400, 'Cada campo debe pertenecer a un firmante.', 'validation');
-      const x = cleanNumber(f.x, { min: 0, max: 1, field: 'La posición' });
-      const y = cleanNumber(f.y, { min: 0, max: 1, field: 'La posición' });
-      const w = cleanNumber(f.w, { min: 0.01, max: 1, field: 'El ancho' });
-      const h = cleanNumber(f.h, { min: 0.005, max: 1, field: 'El alto' });
-      return {
-        recipientKey: recipient.key,
-        type: f.type,
-        page: cleanNumber(f.page, { min: 1, max: env.page_count, field: 'La página' }),
-        x: Math.min(x, 1 - w),
-        y: Math.min(y, 1 - h),
-        w,
-        h,
-        required: f.type === 'checkbox' ? f.required === true : f.required !== false,
-        label: cleanText(f.label ?? '', { max: 60, field: 'la etiqueta', required: false }),
-      };
-    });
+    const fields = cleanFields(fieldsIn, recipients, env.page_count);
 
     await db.query('DELETE FROM recipients WHERE envelope_id = $1', [id]);
     const idByKey = new Map();
@@ -226,13 +207,7 @@ export async function saveDraft(ctx, ownerId, id, body) {
       );
       idByKey.set(r.key, rows[0].id);
     }
-    for (const f of fields) {
-      await db.query(
-        `INSERT INTO fields (envelope_id, recipient_id, type, page, x, y, w, h, required, label)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [id, idByKey.get(f.recipientKey), f.type, f.page, f.x, f.y, f.w, f.h, f.required, f.label],
-      );
-    }
+    await insertFields(db, id, fields, (k) => idByKey.get(k));
     await db.query(
       `UPDATE envelopes SET title = $2, message = $3, sequential = $4, language = $5, expire_days = $6, reminder_days = $7, updated_at = now()
         WHERE id = $1`,
@@ -387,7 +362,8 @@ export async function envelopeDetail(ctx, ownerId, id) {
     [id],
   );
   const { rows: fields } = await ctx.pool.query(
-    `SELECT f.id, r.position AS recipient_index, f.type, f.page, f.x, f.y, f.w, f.h, f.required, f.label
+    `SELECT f.id, r.position AS recipient_index, f.type, f.page, f.x, f.y, f.w, f.h, f.required, f.label,
+            f.options, f.validation, f.cond_field_id, f.cond_value
        FROM fields f JOIN recipients r ON r.id = f.recipient_id WHERE f.envelope_id = $1`,
     [id],
   );
@@ -516,7 +492,7 @@ export async function signingFields(ctx, token, session) {
   const r = await resolveToken(ctx, token);
   assertSession(ctx, r, session);
   const { rows } = await ctx.pool.query(
-    'SELECT id, type, page, x, y, w, h, required, label FROM fields WHERE recipient_id = $1 ORDER BY page, y, x',
+    'SELECT id, type, page, x, y, w, h, required, label, options, validation, cond_field_id, cond_value FROM fields WHERE recipient_id = $1 ORDER BY page, y, x',
     [r.id],
   );
   const { rows: [env] } = await ctx.pool.query('SELECT title, page_count, original_sha256, documents FROM envelopes WHERE id = $1', [r.envelope_id]);
@@ -528,22 +504,40 @@ export async function signDocument(ctx, token, body, meta) {
   const { envelopeId, recipientId } = await withTransaction(ctx.pool, async (db) => {
     const r = await resolveToken(ctx, token, { forUpdate: true, db });
     assertSession(ctx, r, body.session);
-    const { rows: fields } = await db.query('SELECT id, type, required FROM fields WHERE recipient_id = $1', [r.id]);
-    const needs = (type) => fields.some((f) => f.type === type);
+    const { rows: fields } = await db.query('SELECT id, type, required, options, validation, cond_field_id, cond_value FROM fields WHERE recipient_id = $1', [r.id]);
+    const values = body.values && typeof body.values === 'object' ? body.values : {};
+    const rawOf = (f) => {
+      if (f.type === 'checkbox') return values[f.id] === true ? 'true' : 'false';
+      if (f.type === 'select' || f.type === 'text') return typeof values[f.id] === 'string' ? values[f.id].trim() : '';
+      return null;
+    };
+    const shown = visibleFields(fields, rawOf);
+    const needs = (type) => fields.some((f) => f.type === type && shown.has(f.id));
     const signature = needs('signature') ? cleanPngDataUrl(body.signature, 'La firma') : null;
     const initials = needs('initials') ? cleanPngDataUrl(body.initials, 'Las iniciales') : null;
-    const values = body.values && typeof body.values === 'object' ? body.values : {};
     const signedOn = shortDate(new Date());
 
     for (const f of fields) {
       let value = null;
-      if (f.type === 'signature') value = signature;
+      if (!shown.has(f.id)) value = null;
+      else if (f.type === 'signature') value = signature;
       else if (f.type === 'initials') value = initials;
       else if (f.type === 'date') value = signedOn;
       else if (f.type === 'name') value = r.name;
       else if (f.type === 'email') value = r.email;
       else if (f.type === 'checkbox') value = values[f.id] === true ? 'true' : 'false';
-      else if (f.type === 'text') value = cleanText(values[f.id] ?? '', { max: 500, field: 'un campo de texto', required: f.required }) || null;
+      else if (f.type === 'text') {
+        value = cleanText(values[f.id] ?? '', { max: 500, field: 'un campo de texto', required: f.required }) || null;
+        const rule = value && f.validation ? VALIDATIONS[f.validation] : null;
+        if (rule && !rule.re.test(value)) throw new HttpError(400, `Un campo de texto tiene que ser ${rule.message}.`, 'validation');
+      } else if (f.type === 'select') {
+        value = rawOf(f) || null;
+        if (value && !(f.options || []).includes(value)) throw new HttpError(400, 'Elegí una opción válida de la lista.', 'validation');
+      }
+      if (!shown.has(f.id)) {
+        await db.query('UPDATE fields SET value = NULL WHERE id = $1', [f.id]);
+        continue;
+      }
       if (f.required && f.type === 'checkbox' && value !== 'true') throw new HttpError(400, 'Marcá todas las casillas obligatorias.', 'validation');
       if (f.required && !value && !AUTO_FIELDS.has(f.type)) throw new HttpError(400, 'Completá todos los campos obligatorios.', 'validation');
       await db.query('UPDATE fields SET value = $2 WHERE id = $1', [f.id, value]);
@@ -752,7 +746,10 @@ export async function createFromApi(ctx, owner, body, idempotencyKey, meta) {
       ? body.fields.map((f) => {
         const idx = typeof f.recipient === 'number' ? f.recipient : recipientsIn.findIndex((r) => String(r?.email).toLowerCase() === String(f.recipient).toLowerCase());
         if (idx < 0 || idx >= recipients.length) throw new HttpError(400, 'Cada campo debe indicar "recipient" (índice o email de un destinatario).', 'validation');
-        return { recipientKey: `r${idx}`, type: f.type, page: f.page, x: f.x, y: f.y, w: f.width, h: f.height, required: f.required, label: f.label };
+        return {
+          key: f.key, recipientKey: `r${idx}`, type: f.type, page: f.page, x: f.x, y: f.y, w: f.width, h: f.height, required: f.required, label: f.label,
+          options: f.options, validation: f.validation, showIf: f.show_if ? { key: f.show_if.field, equals: f.show_if.equals } : null,
+        };
       })
       : autoFields(recipients, pageCount);
     await saveDraft(ctx, owner.id, id, {
@@ -788,13 +785,9 @@ async function cloneAsDraft(db, src, correctedFrom) {
     );
     map.set(r.id, n.id);
   }
-  const { rows: fields } = await db.query('SELECT recipient_id, type, page, x, y, w, h, required, label FROM fields WHERE envelope_id = $1', [src]);
-  for (const f of fields) {
-    await db.query(
-      'INSERT INTO fields (envelope_id, recipient_id, type, page, x, y, w, h, required, label) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
-      [created.id, map.get(f.recipient_id), f.type, f.page, f.x, f.y, f.w, f.h, f.required, f.label],
-    );
-  }
+  const { rows: fields } = await db.query('SELECT id, recipient_id, type, page, x, y, w, h, required, label, options, validation, cond_field_id, cond_value FROM fields WHERE envelope_id = $1', [src]);
+  const copy = fieldsAsInput(fields, (f) => f.recipient_id).map((f) => ({ ...f, showIf: f.showIf && fields.some((x) => x.id === f.showIf.key) ? f.showIf : null }));
+  await insertFields(db, created.id, copy, (rid) => map.get(rid));
   await addEvent(db, created.id, 'created', { data: { corrected_from: correctedFrom } });
   return created.id;
 }

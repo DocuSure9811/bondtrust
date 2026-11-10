@@ -178,11 +178,46 @@ async function documentStep() {
   renderBar();
 }
 
+const FORMATS = {
+  email: { re: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, mode: 'email' },
+  number: { re: /^-?\d+([.,]\d+)?$/, mode: 'decimal' },
+  id: { re: /^[0-9A-Za-z.\- ]{5,20}$/, mode: 'text' },
+  phone: { re: /^\+?[\d\s().-]{7,20}$/, mode: 'tel' },
+};
+
+/** Valor que controla las condiciones (igual que en el servidor). */
+function rawValue(f) {
+  if (f.type === 'checkbox') return values[f.id] === true ? 'true' : 'false';
+  if (f.type === 'select' || f.type === 'text') return String(values[f.id] || '').trim();
+  return '';
+}
+
+/** Campos visibles según las respuestas actuales: un campo condicional se ve si su campo de control tiene el valor indicado. */
+function visibleIds() {
+  const byId = new Map(data.fields.map((f) => [f.id, f]));
+  const memo = new Map();
+  const visible = (f) => {
+    if (memo.has(f.id)) return memo.get(f.id);
+    memo.set(f.id, false);
+    const parent = f.cond_field_id ? byId.get(f.cond_field_id) : null;
+    const v = !f.cond_field_id || (parent ? visible(parent) && rawValue(parent) === f.cond_value : true);
+    memo.set(f.id, v);
+    return v;
+  };
+  return new Set(data.fields.filter(visible).map((f) => f.id));
+}
+
+function formatOk(f) {
+  const v = String(values[f.id] || '').trim();
+  return !v || !f.validation || !FORMATS[f.validation] || FORMATS[f.validation].re.test(v);
+}
+
 function fieldDone(f) {
   if (f.type === 'signature') return Boolean(signature);
   if (f.type === 'initials') return Boolean(initials);
   if (f.type === 'checkbox') return !f.required || values[f.id] === true;
-  if (f.type === 'text') return !f.required || Boolean(String(values[f.id] || '').trim());
+  if (f.type === 'text') return (!f.required || Boolean(String(values[f.id] || '').trim())) && formatOk(f);
+  if (f.type === 'select') return !f.required || Boolean(values[f.id]);
   return true;
 }
 
@@ -199,8 +234,16 @@ function placeFields() {
       input.value = values[f.id] || '';
       input.placeholder = f.label || (f.required ? t.required : t.optional);
       input.setAttribute('aria-label', f.label || t.text);
+      if (FORMATS[f.validation]) input.inputMode = FORMATS[f.validation].mode;
       input.addEventListener('input', () => { values[f.id] = input.value; update(); });
       el.appendChild(input);
+    } else if (f.type === 'select') {
+      el = document.createElement('div');
+      const select = document.createElement('select');
+      select.setAttribute('aria-label', f.label || t.chooseOption);
+      select.innerHTML = `<option value="">${esc(f.label || t.chooseOption)}</option>${(f.options || []).map((o) => `<option${values[f.id] === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}`;
+      select.addEventListener('change', () => { values[f.id] = select.value; update(); });
+      el.appendChild(select);
     } else if (f.type === 'checkbox') {
       el = document.createElement('label');
       const input = document.createElement('input');
@@ -234,15 +277,18 @@ function fitFonts() {
   document.querySelectorAll('.sbox').forEach((el) => {
     const px = `${Math.max(8, Math.min(15, el.clientHeight * 0.62))}px`;
     el.style.fontSize = px;
-    const input = el.querySelector('input[type="text"]');
+    const input = el.querySelector('input[type="text"], select');
     if (input) input.style.fontSize = px;
   });
 }
 
 function update() {
+  const shown = visibleIds();
   for (const f of data.fields) {
     const el = document.querySelector(`.sbox[data-id="${f.id}"]`);
     if (!el) continue;
+    el.hidden = !shown.has(f.id);
+    el.classList.toggle('invalid', f.type === 'text' && !formatOk(f));
     const done = fieldDone(f);
     el.classList.toggle('filled', done);
     if (done) el.classList.remove('missing');
@@ -251,7 +297,7 @@ function update() {
       el.innerHTML = img ? `<img alt="${f.type === 'signature' ? t.yourSignatureAlt : t.yourInitialsAlt}" src="${img}">` : (f.type === 'signature' ? t.signHere : t.initialsBox);
     }
   }
-  const counted = data.fields.filter((f) => !['date', 'name', 'email'].includes(f.type));
+  const counted = data.fields.filter((f) => shown.has(f.id) && !['date', 'name', 'email'].includes(f.type));
   const done = counted.filter(fieldDone).length;
   const p = document.getElementById('progress');
   if (p) p.textContent = t.progress(done, counted.length);
@@ -277,13 +323,14 @@ function renderBar() {
 async function finish() {
   const err = document.getElementById('bar-err');
   err.textContent = '';
-  const pending = data.fields.find((f) => !fieldDone(f));
+  const shown = visibleIds();
+  const pending = data.fields.find((f) => shown.has(f.id) && !fieldDone(f));
   if (pending) {
     const el = document.querySelector(`.sbox[data-id="${pending.id}"]`);
     el.classList.add('missing');
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     err.dataset.kind = 'fields';
-    err.textContent = t.completeFields;
+    err.textContent = pending.type === 'text' && !formatOk(pending) ? t.invalidFormat : t.completeFields;
     return;
   }
   if (!document.getElementById('consent').checked) {
