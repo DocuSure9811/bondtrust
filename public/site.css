@@ -452,6 +452,15 @@ dialog::backdrop { background: rgba(6, 38, 31, .55); }
 .status-expired { background: var(--warn-50); color: #8a5a00; }
 .bulk-result { max-height: 260px; overflow: auto; font-size: .88rem; }
 @media (max-width: 860px) { .options-grid { grid-template-columns: 1fr; } }
+
+/* v0.5 */
+.recipient { position: relative; }
+.suggest { position: absolute; left: 12px; right: 12px; top: calc(100% - 4px); z-index: 30; list-style: none; margin: 0; padding: 6px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+.suggest li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: .9rem; flex-wrap: wrap; }
+.suggest li span { color: var(--muted); }
+.suggest li:hover, .suggest li[aria-selected="true"] { background: var(--brand-50); }
+#ct-search { margin: 0 0 14px; }
+.m-put { background: #b7791f; }
 @media (max-width: 640px) {
   .sign-header-row { flex-wrap: wrap; gap: 8px 12px; padding: 8px 0; }
   .sign-doc-info { order: 3; width: 100%; margin-left: 0; text-align: left; font-size: .85rem; }

@@ -9,6 +9,7 @@ import { hashPassword, hmac, randomToken, safeEqualHex, sha256Hex, verifyPasswor
 import { createApiV1 } from './api-v1.js';
 import * as apiKeys from './services/apikeys.js';
 import * as account from './services/account.js';
+import * as contacts from './services/contacts.js';
 import * as env from './services/envelopes.js';
 import * as templatesSvc from './services/templates.js';
 import * as webhooks from './services/webhooks.js';
@@ -186,6 +187,7 @@ export function createApp({ pool, config, mailer }) {
   app.get('/app/conectar', requirePageUser, (req, res) => html(res, views.connectPage(config, req.user)));
   app.get('/app/plantillas', requirePageUser, (req, res) => html(res, views.templatesPage(config, req.user)));
   app.get('/app/ajustes', requirePageUser, (req, res) => html(res, views.settingsPage(config, req.user)));
+  app.get('/app/contactos', requirePageUser, (req, res) => html(res, views.contactsPage(config, req.user)));
 
   // ---------- API del panel: corrección, vencimiento, firma en persona ----------
   app.post('/api/sobres/:id/corregir', requireUser, asyncRoute(async (req, res) => res.json(await env.correctEnvelope(ctx, req.user.id, req.params.id, clientMeta(req)))));
@@ -204,6 +206,12 @@ export function createApp({ pool, config, mailer }) {
     limit(`bulk:${req.user.id}`, 10, 3600_000);
     res.json(await templatesSvc.bulkSend(ctx, req.user, req.params.id, req.body.rows, clientMeta(req)));
   }));
+
+  // ---------- API del panel: contactos ----------
+  app.get('/api/contactos', requireUser, asyncRoute(async (req, res) => res.json({ data: await contacts.listContacts(ctx, req.user.id, req.query.q) })));
+  app.post('/api/contactos', requireUser, json, asyncRoute(async (req, res) => res.status(201).json(await contacts.createContact(ctx, req.user.id, req.body))));
+  app.put('/api/contactos/:id', requireUser, json, asyncRoute(async (req, res) => res.json(await contacts.updateContact(ctx, req.user.id, req.params.id, req.body))));
+  app.delete('/api/contactos/:id', requireUser, asyncRoute(async (req, res) => res.json(await contacts.deleteContact(ctx, req.user.id, req.params.id))));
 
   // ---------- API del panel: cuenta y marca ----------
   const logoBody = express.raw({ type: ['image/png', 'image/jpeg'], limit: '250kb' });

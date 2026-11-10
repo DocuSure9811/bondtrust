@@ -183,6 +183,18 @@ CREATE TABLE IF NOT EXISTS templates (
 );
 CREATE INDEX IF NOT EXISTS templates_owner_idx ON templates (owner_id, created_at DESC);
 
+-- v0.5: contactos
+CREATE TABLE IF NOT EXISTS contacts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  email text NOT NULL,
+  uses int NOT NULL DEFAULT 0,
+  last_used_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (owner_id, email)
+);
+
 CREATE TABLE IF NOT EXISTS emails (
   id bigserial PRIMARY KEY,
   envelope_id uuid REFERENCES envelopes(id) ON DELETE CASCADE,

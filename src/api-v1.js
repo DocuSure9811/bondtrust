@@ -1,5 +1,6 @@
 import express from 'express';
 import * as keys from './services/apikeys.js';
+import * as contacts from './services/contacts.js';
 import * as env from './services/envelopes.js';
 import * as templatesSvc from './services/templates.js';
 import * as hooks from './services/webhooks.js';
@@ -113,6 +114,11 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
     limit(`bulk:${req.apiUser.id}`, 10, 3600_000);
     res.json(await templatesSvc.bulkSend(ctx, req.apiUser, req.params.id, req.body?.rows, clientMeta(req)));
   }));
+
+  router.get('/contacts', asyncRoute(async (req, res) => res.json({ data: await contacts.listContacts(ctx, req.apiUser.id, req.query.q) })));
+  router.post('/contacts', asyncRoute(async (req, res) => res.status(201).json(await contacts.createContact(ctx, req.apiUser.id, req.body || {}))));
+  router.put('/contacts/:id', asyncRoute(async (req, res) => res.json(await contacts.updateContact(ctx, req.apiUser.id, req.params.id, req.body || {}))));
+  router.delete('/contacts/:id', asyncRoute(async (req, res) => res.json(await contacts.deleteContact(ctx, req.apiUser.id, req.params.id))));
 
   router.get('/webhooks', asyncRoute(async (req, res) => res.json({ data: await hooks.listWebhooks(ctx, req.apiUser.id), events: hooks.WEBHOOK_EVENTS })));
   router.post('/webhooks', asyncRoute(async (req, res) => res.status(201).json(await hooks.createWebhook(ctx, req.apiUser.id, req.body || {}))));

@@ -41,7 +41,7 @@ function appShell(config, user, { title, body, scripts, active = 'docs' }) {
   const shell = `<div class="app">
   <header class="app-header"><div class="wrap-app app-header-row">
     <a class="logo" href="/app" aria-label="DocSure, mis documentos">${LOGO_SVG}<span>DocSure</span></a>
-    <nav class="app-nav" aria-label="Aplicación"><a href="/app"${active === 'docs' ? ' aria-current="page"' : ''}>Documentos</a><a href="/app/nuevo"${active === 'new' ? ' aria-current="page"' : ''}>Nuevo sobre</a><a href="/app/plantillas"${active === 'tpl' ? ' aria-current="page"' : ''}>Plantillas</a><a href="/app/api"${active === 'api' ? ' aria-current="page"' : ''}>API</a><a href="/app/ajustes"${active === 'settings' ? ' aria-current="page"' : ''}>Ajustes</a></nav>
+    <nav class="app-nav" aria-label="Aplicación"><a href="/app"${active === 'docs' ? ' aria-current="page"' : ''}>Documentos</a><a href="/app/nuevo"${active === 'new' ? ' aria-current="page"' : ''}>Nuevo sobre</a><a href="/app/plantillas"${active === 'tpl' ? ' aria-current="page"' : ''}>Plantillas</a><a href="/app/contactos"${active === 'contacts' ? ' aria-current="page"' : ''}>Contactos</a><a href="/app/api"${active === 'api' ? ' aria-current="page"' : ''}>API</a><a href="/app/ajustes"${active === 'settings' ? ' aria-current="page"' : ''}>Ajustes</a></nav>
     <div class="app-user"><span class="app-user-name">${escapeHtml(user.name)}</span><button class="btn btn-ghost btn-sm" type="button" id="logout">Salir</button></div>
   </div></header>
   ${body}
@@ -178,6 +178,32 @@ export function templatesPage(config, user) {
   <div id="tpl-list" class="env-list" aria-live="polite"><p class="muted">Cargando…</p></div>
 </div>`,
     scripts: ['/static/templates.js'],
+  });
+}
+
+export function contactsPage(config, user) {
+  return appShell(config, user, {
+    title: 'Contactos',
+    active: 'contacts',
+    body: `<div class="wrap-app app-main">
+  <div class="app-title-row"><h1>Contactos</h1><span class="muted small" id="ct-count"></span></div>
+  <p class="muted">Cada persona a la que le enviás un sobre se guarda acá sola. Al escribir un destinatario nuevo te la sugerimos.</p>
+  <section class="card">
+    <h2>Agregar contacto</h2>
+    <form id="ct-form" class="inline-form" novalidate>
+      <label class="visually-hidden" for="ct-name">Nombre</label><input id="ct-name" maxlength="120" placeholder="Nombre y apellido" autocomplete="off" required>
+      <label class="visually-hidden" for="ct-email">Email</label><input id="ct-email" type="email" maxlength="254" placeholder="email@empresa.com" autocomplete="off" required>
+      <button class="btn btn-primary" type="submit">Agregar</button>
+    </form>
+    <p class="form-error" role="alert" id="ct-msg"></p>
+  </section>
+  <section class="card">
+    <label class="visually-hidden" for="ct-search">Buscar contacto</label>
+    <input id="ct-search" type="search" placeholder="Buscar por nombre o email" autocomplete="off">
+    <ul class="rlist" id="ct-list" aria-live="polite"><li class="muted">Cargando…</li></ul>
+  </section>
+</div>`,
+    scripts: ['/static/contacts.js'],
   });
 }
 

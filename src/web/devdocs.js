@@ -160,6 +160,10 @@ const ENDPOINTS = [
   ['GET', '/templates', 'Lista las plantillas con sus roles.'],
   ['POST', '/templates/{id}/envelopes', 'Crea y envía un sobre desde una plantilla: {"recipients": [...] en el orden de los roles}.'],
   ['POST', '/templates/{id}/bulk', 'Envío masivo (plantillas de un firmante): {"rows": [{"name","email"}]} hasta 200.'],
+  ['GET', '/contacts?q=', 'Libreta de contactos (se completa sola con cada envío). Búsqueda opcional por nombre o email.'],
+  ['POST', '/contacts', 'Agrega un contacto: {"name","email"}. Si el email ya existe, actualiza el nombre.'],
+  ['PUT', '/contacts/{id}', 'Edita nombre y email de un contacto.'],
+  ['DELETE', '/contacts/{id}', 'Elimina un contacto.'],
   ['GET', '/webhooks', 'Lista los webhooks.'],
   ['POST', '/webhooks', 'Crea un webhook. Devuelve su secreto de firma una sola vez.'],
   ['DELETE', '/webhooks/{id}', 'Elimina un webhook.'],
@@ -347,6 +351,7 @@ export function openapiSpec(config) {
             links: { type: 'object' },
           },
         },
+        Contact: { type: 'object', required: ['name', 'email'], properties: { name: { type: 'string', maxLength: 120 }, email: { type: 'string', format: 'email' } } },
         Webhook: { type: 'object', required: ['url'], properties: { url: { type: 'string', format: 'uri' }, events: { type: 'array', items: { type: 'string', enum: WEBHOOK_EVENTS } } } },
       },
     },
@@ -371,6 +376,14 @@ export function openapiSpec(config) {
       '/templates': { get: { summary: 'Listar plantillas', security: auth, responses: { 200: { description: 'Lista con roles' } } } },
       '/templates/{id}/envelopes': { post: { summary: 'Crear y enviar desde una plantilla', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['recipients'], properties: { recipients: { type: 'array', items: { $ref: '#/components/schemas/Recipient' } }, title: { type: 'string' }, message: { type: 'string' }, language: { type: 'string', enum: ['es', 'en', 'pt'] }, expire_days: { type: 'integer' }, reminder_days: { type: 'integer' }, send: { type: 'boolean', default: true } } } } } }, responses: { 201: envResp, 400: err, 402: err } } },
       '/templates/{id}/bulk': { post: { summary: 'Envío masivo desde una plantilla de un firmante', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['rows'], properties: { rows: { type: 'array', maxItems: 200, items: { type: 'object', properties: { name: { type: 'string' }, email: { type: 'string', format: 'email' } } } } } } } } }, responses: { 200: { description: 'Resultado por fila' }, 400: err } } },
+      '/contacts': {
+        get: { summary: 'Listar contactos', security: auth, parameters: [{ name: 'q', in: 'query', schema: { type: 'string' } }], responses: { 200: { description: 'Lista' } } },
+        post: { summary: 'Agregar contacto', security: auth, requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Contact' } } } }, responses: { 201: { description: 'Contacto' }, 400: err } },
+      },
+      '/contacts/{id}': {
+        put: { summary: 'Editar contacto', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Contact' } } } }, responses: { 200: { description: 'Contacto' }, 404: err, 409: err } },
+        delete: { summary: 'Eliminar contacto', security: auth, parameters: [idParam], responses: { 200: { description: 'ok' }, 404: err } },
+      },
       '/webhooks': {
         get: { summary: 'Listar webhooks', security: auth, responses: { 200: { description: 'Lista' } } },
         post: { summary: 'Crear webhook (devuelve el secreto una vez)', security: auth, requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Webhook' } } } }, responses: { 201: { description: 'Webhook con secret' }, 400: err } },

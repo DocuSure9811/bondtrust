@@ -130,7 +130,64 @@ $('recipients').addEventListener('input', (e) => {
     state.fields = state.fields.filter((f) => f.recipientKey !== r.key || r.role === 'signer');
     renderRecipients();
   }
+  if (e.target.dataset.f === 'name' || e.target.dataset.f === 'email') showSuggest(row, e.target, r);
 });
+
+// ---------- Sugerencias desde la libreta de contactos ----------
+let contacts = [];
+api('/api/contactos').then((res) => { contacts = res.data; }).catch(() => {});
+const suggest = document.createElement('ul');
+suggest.className = 'suggest';
+suggest.id = 'suggest';
+suggest.setAttribute('role', 'listbox');
+suggest.hidden = true;
+let suggestFor = null;
+
+function showSuggest(row, input, r) {
+  const q = input.value.trim().toLowerCase();
+  const used = new Set(state.recipients.filter((x) => x !== r).map((x) => x.email.trim().toLowerCase()));
+  const matches = q.length < 2 ? [] : contacts.filter((c) => !used.has(c.email) && (c.name.toLowerCase().includes(q) || c.email.includes(q))).slice(0, 6);
+  if (!matches.length) return hideSuggest();
+  suggestFor = { row, r, input, matches, active: -1 };
+  suggest.innerHTML = matches.map((c, i) => `<li role="option" id="sg-${i}" data-i="${i}"><strong>${esc(c.name)}</strong><span>${esc(c.email)}</span></li>`).join('');
+  input.setAttribute('aria-controls', 'suggest');
+  row.appendChild(suggest);
+  suggest.hidden = false;
+}
+function hideSuggest() {
+  suggest.hidden = true;
+  suggestFor = null;
+}
+function pickSuggest(i) {
+  const { r, matches } = suggestFor;
+  r.name = matches[i].name;
+  r.email = matches[i].email;
+  hideSuggest();
+  renderRecipients();
+}
+suggest.addEventListener('mousedown', (e) => {
+  const li = e.target.closest('li[data-i]');
+  if (!li) return;
+  e.preventDefault();
+  pickSuggest(Number(li.dataset.i));
+});
+$('recipients').addEventListener('keydown', (e) => {
+  if (!suggestFor || suggest.hidden) return;
+  const n = suggestFor.matches.length;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    suggestFor.active = (suggestFor.active + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+    suggest.querySelectorAll('li').forEach((li, i) => li.setAttribute('aria-selected', String(i === suggestFor.active)));
+  } else if (e.key === 'Enter' && suggestFor.active >= 0) {
+    e.preventDefault();
+    pickSuggest(suggestFor.active);
+  } else if (e.key === 'Escape') {
+    hideSuggest();
+  }
+});
+$('recipients').addEventListener('focusout', () => setTimeout(() => {
+  if (!$('recipients').contains(document.activeElement)) hideSuggest();
+}, 0));
 $('recipients').addEventListener('click', (e) => {
   if (!e.target.matches('[data-remove]')) return;
   const key = e.target.closest('.recipient').dataset.key;

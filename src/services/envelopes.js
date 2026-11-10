@@ -5,6 +5,7 @@ import { buildFinalPdf, inspectPdf } from '../pdf/final.js';
 import { planOf } from '../plans.js';
 import { hmac, maskEmail, newOtp, randomToken, safeEqualHex, sha256Hex } from '../security.js';
 import { HttpError, cleanEmail, cleanNumber, cleanPngDataUrl, cleanText } from '../validate.js';
+import { rememberRecipients } from './contacts.js';
 import { emitEnvelopeEvent } from './webhooks.js';
 
 /** Notifica a los webhooks en segundo plano; nunca bloquea ni rompe el flujo principal. */
@@ -218,6 +219,7 @@ export async function sendEnvelope(ctx, owner, id, idempotencyKey, meta) {
       [id, key],
     );
     await addEvent(db, id, 'sent', meta);
+    await rememberRecipients(db, owner.id, id);
     return { replay: false };
   });
   if (!outcome.replay) {
