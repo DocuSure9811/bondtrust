@@ -531,14 +531,35 @@ function trimmedPng(canvas) {
   return out.toDataURL('image/png');
 }
 
+/** Firma recordada: solo en este dispositivo y solo si el firmante lo pide. */
+const savedKey = (type) => `ds_saved_${type}:${String(data.email).toLowerCase()}`;
+function loadSaved(type) {
+  try {
+    const v = localStorage.getItem(savedKey(type));
+    return v && v.startsWith('data:image/png;base64,') ? v : null;
+  } catch {
+    return null;
+  }
+}
+function storeSaved(type, png) {
+  try {
+    if (png) localStorage.setItem(savedKey(type), png); else localStorage.removeItem(savedKey(type));
+  } catch {
+    // Navegación privada o almacenamiento bloqueado: simplemente no se recuerda.
+  }
+}
+
 function openPad(type) {
   const isSig = type === 'signature';
   const initialsGuess = data.name.split(/\s+/).map((w) => w[0]).join('').toUpperCase();
   const dlg = document.createElement('dialog');
+  const saved = loadSaved(type);
   dlg.innerHTML = `<div class="modal"><h2>${isSig ? t.yourSignature : t.yourInitials}</h2>
+    ${saved ? `<div class="saved-sig"><img alt="${isSig ? t.yourSignatureAlt : t.yourInitialsAlt}" src="${saved}"><div><button class="btn btn-primary btn-sm" type="button" id="pad-saved">${t.useSaved}</button> <button class="btn btn-ghost btn-sm" type="button" id="pad-forget">${t.forgetSaved}</button></div></div>` : ''}
     <div class="modal-tabs" role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="draw">${t.draw}</button><button type="button" role="tab" aria-selected="false" data-tab="type">${t.type}</button></div>
     <div data-panel="draw"><canvas class="pad" aria-label="${t.padArea}"></canvas><p class="fine">${t.drawHint}</p></div>
     <div data-panel="type" hidden><label>${isSig ? t.typeName : t.typeInitials}<input id="typed" maxlength="${isSig ? 60 : 6}" value="${esc(isSig ? data.name : initialsGuess)}"></label><div class="typed-preview" id="typed-preview"></div></div>
+    <label class="switch small"><input type="checkbox" id="pad-remember"${saved ? ' checked' : ''}> ${t.rememberSig}</label>
     <p class="form-error" role="alert" id="pad-err"></p>
     <div class="modal-actions"><button class="btn btn-ghost" type="button" id="pad-clear">${t.clear}</button><button class="btn btn-ghost" type="button" id="pad-cancel">${t.cancel}</button><button class="btn btn-primary" type="button" id="pad-ok">${isSig ? t.useSignature : t.useInitials}</button></div></div>`;
   document.body.appendChild(dlg);
@@ -582,6 +603,16 @@ function openPad(type) {
   }));
   const close = () => { dlg.close(); dlg.remove(); };
   dlg.querySelector('#pad-cancel').addEventListener('click', close);
+  dlg.querySelector('#pad-saved')?.addEventListener('click', () => {
+    if (isSig) signature = saved; else initials = saved;
+    close();
+    update();
+  });
+  dlg.querySelector('#pad-forget')?.addEventListener('click', () => {
+    storeSaved(type, null);
+    dlg.querySelector('.saved-sig').remove();
+    dlg.querySelector('#pad-remember').checked = false;
+  });
   dlg.querySelector('#pad-clear').addEventListener('click', () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     typed.value = '';
@@ -604,6 +635,7 @@ function openPad(type) {
     }
     if (!png) return void (dlg.querySelector('#pad-err').textContent = isSig ? t.needSignature : t.needInitials);
     if (isSig) signature = png; else initials = png;
+    storeSaved(type, dlg.querySelector('#pad-remember').checked ? png : null);
     close();
     update();
   });
