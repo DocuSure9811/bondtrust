@@ -20,6 +20,7 @@ import * as webhooks from './services/webhooks.js';
 import * as content from './web/content.js';
 import * as devdocs from './web/devdocs.js';
 import * as industries from './web/industries.js';
+import * as resources from './web/resources.js';
 import { HttpError, cleanEmail, cleanPassword, cleanText } from './validate.js';
 import * as views from './web/app-views.js';
 import * as marketing from './web/marketing.js';
@@ -156,7 +157,7 @@ export function createApp({ pool, config, mailer }) {
   });
 
   app.get('/sitemap.xml', (req, res) => {
-    const urls = [...marketing.SITEMAP_PATHS, ...industries.INDUSTRY_PATHS, ...content.CONTENT_PATHS].map((p) => `<url><loc>${config.siteUrl}${p}</loc><changefreq>weekly</changefreq><priority>${p === '/' ? '1.0' : '0.7'}</priority></url>`).join('');
+    const urls = [...marketing.SITEMAP_PATHS, ...industries.INDUSTRY_PATHS, ...content.CONTENT_PATHS, ...resources.HELP_PATHS].map((p) => `<url><loc>${config.siteUrl}${p}</loc><changefreq>weekly</changefreq><priority>${p === '/' ? '1.0' : '0.7'}</priority></url>`).join('');
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
   });
 
@@ -197,6 +198,12 @@ export function createApp({ pool, config, mailer }) {
   app.get('/blog', (req, res) => html(res, content.blogIndex(config, req.user)));
   app.get('/blog/:slug', (req, res, next) => {
     const out = content.blogPost(config, req.user, req.params.slug);
+    return out ? html(res, out) : next();
+  });
+  app.get('/generador-de-firma', (req, res) => html(res, resources.signatureGenerator(config, req.user)));
+  app.get('/ayuda', (req, res) => html(res, resources.helpIndex(config, req.user)));
+  app.get('/ayuda/:slug', (req, res, next) => {
+    const out = resources.helpArticle(config, req.user, req.params.slug);
     return out ? html(res, out) : next();
   });
   app.get('/llms.txt', (req, res) => res.type('text/plain; charset=utf-8').set('Cache-Control', 'public, max-age=3600').send(devdocs.llmsTxt(config)));

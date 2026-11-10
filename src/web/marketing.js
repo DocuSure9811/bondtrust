@@ -1,3 +1,4 @@
+import { INDUSTRIES } from './industries.js';
 import { page } from './layout.js';
 
 const soon = '<span class="badge-soon">Pronto</span>';
@@ -276,16 +277,7 @@ ${blocks
 }
 
 export function solutions(config, user) {
-  const items = [
-    ['ventas', 'Ventas', 'Mandá la propuesta y el contrato en el mismo momento. Tu cliente firma desde el celular y vos cerrás el acuerdo el mismo día.'],
-    ['recursos-humanos', 'Recursos Humanos', 'Contratos laborales, confidencialidad y políticas internas firmados a distancia, con registro de quién aceptó qué y cuándo.'],
-    ['legal', 'Legal', 'Trazabilidad completa, sello criptográfico y certificado de finalización para cada acuerdo. Evidencia lista para presentar.'],
-    ['compras', 'Compras', 'Órdenes de compra y contratos con proveedores firmados en orden: primero el proveedor, después quien aprueba.'],
-    ['inmobiliarias', 'Inmobiliario', 'Reservas, boletos y contratos de alquiler firmados por propietarios e inquilinos sin coordinar encuentros.'],
-    ['servicios-financieros', 'Servicios financieros', 'Altas de clientes, mandatos y declaraciones con identidad verificada y documentación inalterable.'],
-    ['salud', 'Salud', 'Consentimientos informados firmados antes de la consulta, con copia automática para el paciente.'],
-    ['educacion', 'Educación', 'Inscripciones, autorizaciones de salidas y acuerdos con docentes firmados por familias desde el celular.'],
-  ];
+  const items = Object.entries(INDUSTRIES).map(([id, ind]) => [id, ind.name, ind.lead]);
   const body = `
 <section class="page-hero"><div class="wrap narrow center">
   <h1>Una firma, todos los equipos</h1>
@@ -297,7 +289,7 @@ ${items.map(([id, t, d]) => `<article class="solution" id="${id}"><h2><a href="/
   return page({
     config, user, path: '/soluciones',
     title: 'Soluciones de firma electrónica por área y sector',
-    description: 'Firma electrónica para ventas, recursos humanos, legal, compras, inmobiliarias, servicios financieros, salud y educación.',
+    description: 'Firma electrónica para ventas, recursos humanos, legal, compras, experiencia del cliente, inmobiliarias, finanzas, seguros, salud, ciencias de la vida, educación, PyMEs y grandes empresas.',
     body,
   });
 }
@@ -425,4 +417,4 @@ export function legal(config, user, slug) {
   return page({ config, user, path: `/legal/${slug}`, title: doc.title, description: doc.description, body });
 }
 
-export const SITEMAP_PATHS = ['/', '/producto', '/precios', '/soluciones', '/seguridad', '/verificar', '/desarrolladores', '/validez-legal', '/registro', '/legal/terminos', '/legal/privacidad', '/legal/cookies'];
+export const SITEMAP_PATHS = ['/', '/generador-de-firma', '/producto', '/precios', '/soluciones', '/seguridad', '/verificar', '/desarrolladores', '/validez-legal', '/registro', '/legal/terminos', '/legal/privacidad', '/legal/cookies'];

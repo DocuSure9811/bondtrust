@@ -1,19 +1,14 @@
-# DocSure — plan v0.6
+# DocSure — plan v0.7
 
-Cada etapa: implementación + tests en el build + una prueba puntual en producción (un navegador; los tres solo si el cambio es visual) + deploy verificado.
+Cada etapa: implementación + tests en el build + una prueba puntual en producción (un navegador) + deploy verificado.
 
 | # | Etapa | Alcance | Estado |
 |---|-------|---------|--------|
-| 1 | Identidad visual | Azul corporativo + gris plata en sitio, panel, firma, emails, PDF, favicon e imagen para redes | Hecho |
-| 2 | Campos nuevos | Opción única (radio), selección múltiple, número, teléfono, imagen del firmante, sello de empresa | Hecho |
-| 3 | Fórmulas | Campos número calculados a partir de otros (`{precio} * {cantidad}`), sin `eval`, recalculados en el servidor | Hecho |
-| 4 | Documentos de imagen | Subir JPG/PNG además de PDF (se convierten en página) | Hecho |
-| 5 | Detectar campos del PDF | Importar los campos de formularios PDF existentes con un clic | Hecho |
-| 6 | Recordar firma | El firmante puede reutilizar su firma en el mismo dispositivo | Hecho |
-| 7 | Firma embebida | Sobres "embebidos" por API con enlace de firma directo, iframe en dominios autorizados, eventos `postMessage` y `embed.js` | Hecho |
-| 8 | Más idiomas | Francés, alemán e italiano en la firma y los emails | Hecho |
-| 9 | Archivos Word | Subir .docx y convertirlo a PDF en el servidor (mammoth + pdf-lib, sin programas externos) | Hecho |
+| 1 | Generador de firma gratis | `/generador-de-firma`: dibujar o escribir la firma y descargarla en PNG transparente, todo en el navegador | Pendiente |
+| 2 | Más soluciones | Seguros, ciencias de la vida, experiencia del cliente, PyMEs y grandes empresas; menú y pie al estilo DocuSign | Pendiente |
+| 3 | Centro de ayuda | `/ayuda` con artículos paso a paso por tema y buscador | Pendiente |
+| 4 | Gestión de contratos | Fecha de vencimiento del contrato, aviso de renovación por email, versiones (nueva versión de un sobre con historial) y panel de próximos vencimientos | Pendiente |
+| 5 | Automatizaciones | Reglas "cuando… entonces…": al completarse, rechazarse o vencer un sobre, mover a carpeta, enviar copia por email o etiquetar; constructor visual en el panel | Pendiente |
+| 6 | Asistente de IA | Resumen, datos clave (partes, montos, fechas, vencimiento) y preguntas sobre cada documento, con Groq; completa el vencimiento del contrato con un clic | Pendiente |
 
-Ideas tomadas de estudiar DocuSeal (AGPL, solo lectura, sin copiar código): radio, múltiple, imagen, sello, teléfono, fórmulas, imágenes como documento, detección de campos, recordar firma, firma embebida, más idiomas.
-
-Fuera de este plan (necesitan cuentas externas): mails reales (dominio propio), pagos, SMS/WhatsApp, SSO, Supabase, DNS de docsure.app.
+Fuera de este plan (necesitan cuentas externas): mails reales (dominio propio), pagos, SMS/WhatsApp, SSO, firma cualificada (autoridad certificante), conectores nativos y apps en tiendas.

@@ -13,20 +13,14 @@ const NAV = [
           ['/producto#preparacion', 'Preparación de documentos', 'Arrastrá campos sobre tu PDF en segundos'],
           ['/producto#sello', 'Sello digital y auditoría', 'Pruebas criptográficas en cada documento'],
           ['/producto#plantillas', 'Plantillas y envío masivo', 'Cientos de sobres desde un CSV'],
-          ['/integraciones', 'Integraciones', 'API, webhooks, Zapier, Make y n8n'],
-          ['/verificar', 'Verificador público', 'Comprobá si un documento fue alterado'],
-          ['/desarrolladores', 'API y conexión con IA', 'Integrá DocSure en minutos'],
         ],
       },
       {
-        title: 'Recursos',
+        title: 'Integraciones y verificación',
         items: [
-          ['/validez-legal', 'Validez legal', 'eIDAS, ESIGN y Ley 25.506 explicados'],
-          ['/tipos-de-firma', 'Tipos de firma', 'Simple, avanzada, cualificada y digital'],
-          ['/comparar/docusign', 'DocSure vs. DocuSign', 'Más funciones por menos precio'],
-          ['/blog', 'Blog', 'Guías de firma electrónica'],
-          ['/seguridad', 'Centro de confianza', 'Cómo protegemos tus documentos'],
-          ['/precios#preguntas', 'Preguntas frecuentes', 'Todo sobre planes y sobres'],
+          ['/integraciones', 'Integraciones', 'API, webhooks, Zapier, Make y n8n'],
+          ['/verificar', 'Verificador público', 'Comprobá si un documento fue alterado'],
+          ['/desarrolladores', 'API y conexión con IA', 'Integrá DocSure en minutos'],
         ],
       },
     ],
@@ -41,15 +35,49 @@ const NAV = [
           ['/soluciones/recursos-humanos', 'Recursos Humanos', 'Contratos y altas sin papel'],
           ['/soluciones/legal', 'Legal', 'Control total y trazabilidad'],
           ['/soluciones/compras', 'Compras', 'Proveedores firmando en minutos'],
+          ['/soluciones/experiencia-del-cliente', 'Experiencia del cliente', 'Firmas en minutos, con tu marca'],
         ],
       },
       {
         title: 'Por sector',
         items: [
-          ['/soluciones/inmobiliarias', 'Inmobiliario', 'Alquileres y reservas a distancia'],
           ['/soluciones/servicios-financieros', 'Servicios financieros', 'Altas de clientes con evidencia'],
+          ['/soluciones/seguros', 'Seguros', 'Pólizas y siniestros sin papel'],
+          ['/soluciones/inmobiliarias', 'Inmobiliario', 'Alquileres y reservas a distancia'],
           ['/soluciones/salud', 'Salud', 'Consentimientos informados'],
+          ['/soluciones/ciencias-de-la-vida', 'Ciencias de la vida', 'Aprobaciones con auditoría'],
           ['/soluciones/educacion', 'Educación', 'Inscripciones y autorizaciones'],
+        ],
+      },
+      {
+        title: 'Por tamaño',
+        items: [
+          ['/soluciones/pymes', 'PyMEs', 'Empezá gratis, sin tarjeta'],
+          ['/soluciones/grandes-empresas', 'Grandes empresas', 'Equipos, API y seguridad'],
+          ['/soluciones', 'Ver todas las soluciones', 'Áreas, sectores y tamaños'],
+        ],
+      },
+    ],
+  },
+  {
+    label: 'Recursos',
+    groups: [
+      {
+        title: 'Aprender',
+        items: [
+          ['/ayuda', 'Centro de ayuda', 'Guías paso a paso'],
+          ['/validez-legal', 'Validez legal', 'eIDAS, ESIGN y Ley 25.506 explicados'],
+          ['/tipos-de-firma', 'Tipos de firma', 'Simple, avanzada, cualificada y digital'],
+          ['/blog', 'Blog', 'Guías de firma electrónica'],
+        ],
+      },
+      {
+        title: 'Herramientas y confianza',
+        items: [
+          ['/generador-de-firma', 'Generador de firma gratis', 'Creá tu firma en PNG'],
+          ['/seguridad', 'Centro de confianza', 'Cómo protegemos tus documentos'],
+          ['/comparar/docusign', 'DocSure vs. DocuSign', 'Más funciones por menos precio'],
+          ['/precios#preguntas', 'Preguntas frecuentes', 'Todo sobre planes y sobres'],
         ],
       },
     ],
@@ -61,7 +89,7 @@ function megaMenu() {
     (menu) => `<li class="nav-item has-menu">
       <details class="menu">
         <summary>${menu.label}</summary>
-        <div class="mega">${menu.groups
+        <div class="mega" style="--cols:${menu.groups.length}">${menu.groups
           .map(
             (g) => `<div class="mega-col"><p class="mega-title">${g.title}</p><ul>${g.items
               .map(([href, t, d]) => `<li><a href="${href}"><strong>${t}</strong><span>${d}</span></a></li>`)
@@ -87,7 +115,6 @@ export function header({ user } = {}) {
         ${megaMenu()}
         <li class="nav-item"><a href="/precios">Precios</a></li>
         <li class="nav-item"><a href="/desarrolladores">Desarrolladores</a></li>
-        <li class="nav-item"><a href="/seguridad">Seguridad</a></li>
         <li class="nav-item"><a href="/verificar">Verificar documento</a></li>
       </ul>
       <div class="nav-actions">${actions}</div>
@@ -109,9 +136,9 @@ export function footer() {
       <li><a href="/verificar">Verificar un documento</a></li><li><a href="/desarrolladores">API para desarrolladores</a></li><li><a href="/integraciones">Integraciones</a></li><li><a href="/comparar/docusign">DocSure vs. DocuSign</a></li><li><a href="/registro">Crear cuenta gratis</a></li></ul></div>
     <div><p class="footer-title">Soluciones</p><ul>
       <li><a href="/soluciones/ventas">Ventas</a></li><li><a href="/soluciones/recursos-humanos">Recursos Humanos</a></li>
-      <li><a href="/soluciones/legal">Legal</a></li><li><a href="/soluciones/inmobiliarias">Inmobiliario</a></li><li><a href="/soluciones/salud">Salud</a></li><li><a href="/soluciones/educacion">Educación</a></li></ul></div>
-    <div><p class="footer-title">Confianza</p><ul>
-      <li><a href="/seguridad">Centro de confianza</a></li><li><a href="/validez-legal">Validez legal</a></li>
+      <li><a href="/soluciones/legal">Legal</a></li><li><a href="/soluciones/seguros">Seguros</a></li><li><a href="/soluciones/inmobiliarias">Inmobiliario</a></li><li><a href="/soluciones/pymes">PyMEs</a></li><li><a href="/soluciones/grandes-empresas">Grandes empresas</a></li><li><a href="/soluciones">Ver todas</a></li></ul></div>
+    <div><p class="footer-title">Recursos</p><ul>
+      <li><a href="/ayuda">Centro de ayuda</a></li><li><a href="/generador-de-firma">Generador de firma gratis</a></li><li><a href="/seguridad">Centro de confianza</a></li><li><a href="/validez-legal">Validez legal</a></li>
       <li><a href="/precios#preguntas">Preguntas frecuentes</a></li><li><a href="/tipos-de-firma">Tipos de firma</a></li><li><a href="/blog">Blog</a></li><li><a href="/acceder">Firmar con código de acceso</a></li></ul></div>
     <div><p class="footer-title">Legal</p><ul>
       <li><a href="/legal/terminos">Términos y condiciones</a></li><li><a href="/legal/privacidad">Política de privacidad</a></li>
