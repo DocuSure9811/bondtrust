@@ -12,7 +12,7 @@ export async function startTestApp() {
   await adminPool.query(`CREATE SCHEMA ${schema}`);
   const pool = createPool(url, { schema });
   await migrate(pool);
-  const config = loadConfig({ ...process.env, DATABASE_URL: url, APP_URL: 'http://127.0.0.1', PORT: '0' });
+  const config = loadConfig({ ...process.env, DATABASE_URL: url, APP_URL: 'http://127.0.0.1', PORT: '0', ALLOW_PRIVATE_WEBHOOKS: '1' });
   const mailer = createMailer({ pool, resendApiKey: '', mailFrom: 'test', forceOutbox: true });
   const app = createApp({ pool, config, mailer });
   const server = await new Promise((resolve) => {

@@ -4,6 +4,14 @@ import { buildFinalPdf, inspectPdf } from '../pdf/final.js';
 import { planOf } from '../plans.js';
 import { hmac, maskEmail, newOtp, randomToken, safeEqualHex, sha256Hex } from '../security.js';
 import { HttpError, cleanEmail, cleanNumber, cleanPngDataUrl, cleanText } from '../validate.js';
+import { emitEnvelopeEvent } from './webhooks.js';
+
+/** Notifica a los webhooks en segundo plano; nunca bloquea ni rompe el flujo principal. */
+function emit(ctx, envelopeId, type, extra) {
+  emitEnvelopeEvent(ctx, envelopeId, type, extra)
+    .then((deliveries) => Promise.allSettled(deliveries))
+    .catch((err) => console.error('Webhook no emitido:', err.message));
+}
 
 const LINK_DAYS = 30;
 const OTP_MINUTES = 10;
@@ -169,7 +177,10 @@ export async function sendEnvelope(ctx, owner, id, idempotencyKey, meta) {
     await addEvent(db, id, 'sent', meta);
     return { replay: false };
   });
-  if (!outcome.replay) await dispatchStage(ctx, id);
+  if (!outcome.replay) {
+    await dispatchStage(ctx, id);
+    emit(ctx, id, 'envelope.sent');
+  }
   return { ok: true, replay: outcome.replay };
 }
 
@@ -243,14 +254,15 @@ export async function resendInvite(ctx, ownerId, envelopeId, recipientId) {
 }
 
 export async function voidEnvelope(ctx, ownerId, id, meta) {
-  return withTransaction(ctx.pool, async (db) => {
+  await withTransaction(ctx.pool, async (db) => {
     const env = await ownedEnvelope(db, ownerId, id, { lock: true });
     if (env.status !== 'sent') throw new HttpError(409, 'Solo se puede anular un sobre en curso.', 'not_sent');
     await db.query(`UPDATE envelopes SET status = 'voided', updated_at = now() WHERE id = $1`, [id]);
     await db.query('UPDATE recipients SET token_hash = NULL, sign_session_hash = NULL WHERE envelope_id = $1', [id]);
     await addEvent(db, id, 'voided', meta);
-    return { ok: true };
   });
+  emit(ctx, id, 'envelope.voided');
+  return { ok: true };
 }
 
 export async function deleteDraft(ctx, ownerId, id) {
@@ -326,7 +338,10 @@ export async function openSigning(ctx, token, meta) {
   const r = await resolveToken(ctx, token);
   if (r.status === 'sent') {
     const { rowCount } = await ctx.pool.query(`UPDATE recipients SET status = 'viewed' WHERE id = $1 AND status = 'sent'`, [r.id]);
-    if (rowCount) await addEvent(ctx.pool, r.envelope_id, 'viewed', { recipientId: r.id, ...meta });
+    if (rowCount) {
+      await addEvent(ctx.pool, r.envelope_id, 'viewed', { recipientId: r.id, ...meta });
+      emit(ctx, r.envelope_id, 'recipient.viewed', { recipient_id: r.id });
+    }
   }
   return {
     title: r.title,
@@ -406,7 +421,7 @@ export async function signingFields(ctx, token, session) {
 
 export async function signDocument(ctx, token, body, meta) {
   if (body.consent !== true) throw new HttpError(400, 'Tenés que aceptar firmar electrónicamente.', 'consent');
-  const envelopeId = await withTransaction(ctx.pool, async (db) => {
+  const { envelopeId, recipientId } = await withTransaction(ctx.pool, async (db) => {
     const r = await resolveToken(ctx, token, { forUpdate: true, db });
     assertSession(ctx, r, body.session);
     const { rows: fields } = await db.query('SELECT id, type, required FROM fields WHERE recipient_id = $1', [r.id]);
@@ -435,8 +450,9 @@ export async function signDocument(ctx, token, body, meta) {
       [r.id, signature, initials, meta.ip, meta.userAgent ? meta.userAgent.slice(0, 300) : null],
     );
     await addEvent(db, r.envelope_id, 'signed', { recipientId: r.id, ...meta });
-    return r.envelope_id;
+    return { envelopeId: r.envelope_id, recipientId: r.id };
   });
+  emit(ctx, envelopeId, 'recipient.signed', { recipient_id: recipientId });
   await advance(ctx, envelopeId);
   return { ok: true };
 }
@@ -465,6 +481,7 @@ export async function declineDocument(ctx, token, body, meta) {
     url: `${ctx.config.appUrl}/app/sobres/${info.envelopeId}`,
   });
   await ctx.mailer.send({ ...mail, to: info.owner.email, kind: 'declined', envelopeId: info.envelopeId, dedupeKey: `declined:${info.envelopeId}` });
+  emit(ctx, info.envelopeId, 'envelope.declined', { reason });
   return { ok: true };
 }
 
@@ -517,6 +534,7 @@ export async function completeEnvelope(ctx, envelopeId) {
     return true;
   });
   if (!done) return;
+  emit(ctx, envelopeId, 'envelope.completed', { final_sha256: sha256Hex(finalPdf) });
 
   for (const r of recipients) {
     const token = randomToken();
@@ -550,4 +568,86 @@ export async function lookupBySha(ctx, sha) {
     [env.id],
   );
   return { ...env, signers: signers.map((s) => ({ name: s.name, email: maskEmail(s.email), signedAt: s.signed_at })) };
+}
+
+// ---------- API pública v1 ----------
+
+function autoFields(recipients, pageCount) {
+  const signers = recipients.map((r, i) => ({ ...r, i })).filter((r) => r.role !== 'cc');
+  if (signers.length > 6) throw new HttpError(400, 'Con más de 6 firmantes indicá la posición de los campos en "fields".', 'validation');
+  return signers.flatMap((s, n) => {
+    const x = 0.08 + (n % 2) * 0.46;
+    const y = 0.78 - Math.floor(n / 2) * 0.1;
+    return [
+      { recipientKey: `r${s.i}`, type: 'signature', page: pageCount, x, y, w: 0.36, h: 0.06, required: true, label: '' },
+      { recipientKey: `r${s.i}`, type: 'date', page: pageCount, x, y: y + 0.065, w: 0.2, h: 0.025, required: true, label: '' },
+    ];
+  });
+}
+
+function decodePdf(value) {
+  if (typeof value !== 'string' || value.length < 10) throw new HttpError(400, 'Falta document_base64 con el PDF en base64.', 'validation');
+  const b64 = value.replace(/^data:application\/pdf;base64,/, '').replace(/\s+/g, '');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) throw new HttpError(400, 'document_base64 no es base64 válido.', 'validation');
+  return Buffer.from(b64, 'base64');
+}
+
+export async function apiEnvelope(ctx, ownerId, id) {
+  const { envelope: e, recipients, events } = await envelopeDetail(ctx, ownerId, id);
+  const base = `${ctx.config.appUrl}/api/v1/envelopes/${e.id}`;
+  return {
+    id: e.id,
+    title: e.title,
+    message: e.message,
+    status: e.status,
+    sequential: e.sequential,
+    page_count: e.page_count,
+    created_at: e.created_at,
+    sent_at: e.sent_at,
+    completed_at: e.completed_at,
+    expires_at: e.expires_at,
+    original_sha256: e.original_sha256,
+    final_sha256: e.final_sha256,
+    recipients: recipients.map((r) => ({
+      id: r.id, name: r.name, email: r.email, role: r.role, routing_order: r.routing_order,
+      status: r.status, signed_at: r.signed_at, declined_at: r.declined_at, decline_reason: r.decline_reason,
+    })),
+    events: events.map((ev) => ({ type: ev.type, recipient_id: ev.recipient_id, created_at: ev.created_at })),
+    links: {
+      self: base,
+      original_pdf: `${base}/document?version=original`,
+      final_pdf: e.status === 'completed' ? `${base}/document?version=final` : null,
+      dashboard: `${ctx.config.appUrl}/app/sobres/${e.id}`,
+    },
+  };
+}
+
+/** Crea (y por defecto envía) un sobre en una sola llamada. Idempotente con Idempotency-Key. */
+export async function createFromApi(ctx, owner, body, idempotencyKey, meta) {
+  const key = idempotencyKey ? cleanText(idempotencyKey, { max: 100, field: 'Idempotency-Key' }) : null;
+  if (key) {
+    const { rows: [existing] } = await ctx.pool.query('SELECT id FROM envelopes WHERE owner_id = $1 AND create_idempotency_key = $2', [owner.id, key]);
+    if (existing) return { replay: true, envelope: await apiEnvelope(ctx, owner.id, existing.id) };
+  }
+  const recipientsIn = Array.isArray(body.recipients) ? body.recipients : [];
+  if (!recipientsIn.length) throw new HttpError(400, 'Indicá al menos un destinatario en "recipients".', 'validation');
+  const { id, pageCount } = await createDraft(ctx, owner.id, { title: body.title, pdf: decodePdf(body.document_base64) });
+  try {
+    if (key) await ctx.pool.query('UPDATE envelopes SET create_idempotency_key = $2 WHERE id = $1', [id, key]);
+    const recipients = recipientsIn.map((r, i) => ({ key: `r${i}`, name: r?.name, email: r?.email, role: r?.role === 'cc' ? 'cc' : 'signer', order: r?.order ?? i + 1 }));
+    const fields = Array.isArray(body.fields) && body.fields.length
+      ? body.fields.map((f) => {
+        const idx = typeof f.recipient === 'number' ? f.recipient : recipientsIn.findIndex((r) => String(r?.email).toLowerCase() === String(f.recipient).toLowerCase());
+        if (idx < 0 || idx >= recipients.length) throw new HttpError(400, 'Cada campo debe indicar "recipient" (índice o email de un destinatario).', 'validation');
+        return { recipientKey: `r${idx}`, type: f.type, page: f.page, x: f.x, y: f.y, w: f.width, h: f.height, required: f.required, label: f.label };
+      })
+      : autoFields(recipients, pageCount);
+    await saveDraft(ctx, owner.id, id, { title: body.title, message: body.message, sequential: body.sequential === true, recipients, fields });
+    if (body.send !== false) await sendEnvelope(ctx, owner, id, key || randomToken(16), meta);
+  } catch (err) {
+    await ctx.pool.query(`DELETE FROM envelopes WHERE id = $1 AND status = 'draft'`, [id]);
+    if (err.code === '23505' && key) return createFromApi(ctx, owner, body, key, meta);
+    throw err;
+  }
+  return { replay: false, envelope: await apiEnvelope(ctx, owner.id, id) };
 }

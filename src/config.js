@@ -25,5 +25,6 @@ export function loadConfig(env = process.env) {
     resendApiKey: env.RESEND_API_KEY || '',
     mailFrom: env.MAIL_FROM || 'DocSure <no-reply@docsure.app>',
     assetVersion: (env.RENDER_GIT_COMMIT || 'dev').slice(0, 8),
+    allowPrivateWebhooks: env.ALLOW_PRIVATE_WEBHOOKS === '1',
   };
 }

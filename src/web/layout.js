@@ -13,6 +13,7 @@ const NAV = [
           ['/producto#preparacion', 'Preparación de documentos', 'Arrastrá campos sobre tu PDF en segundos'],
           ['/producto#sello', 'Sello digital y auditoría', 'Pruebas criptográficas en cada documento'],
           ['/verificar', 'Verificador público', 'Comprobá si un documento fue alterado'],
+          ['/desarrolladores', 'API y conexión con IA', 'Integrá DocSure en minutos'],
         ],
       },
       {
@@ -80,6 +81,7 @@ export function header({ user } = {}) {
       <ul class="nav-list">
         ${megaMenu()}
         <li class="nav-item"><a href="/precios">Precios</a></li>
+        <li class="nav-item"><a href="/desarrolladores">Desarrolladores</a></li>
         <li class="nav-item"><a href="/seguridad">Seguridad</a></li>
         <li class="nav-item"><a href="/verificar">Verificar documento</a></li>
       </ul>
@@ -99,7 +101,7 @@ export function footer() {
     </div>
     <div><p class="footer-title">Producto</p><ul>
       <li><a href="/producto">Funcionalidades</a></li><li><a href="/precios">Precios</a></li>
-      <li><a href="/verificar">Verificar un documento</a></li><li><a href="/registro">Crear cuenta gratis</a></li></ul></div>
+      <li><a href="/verificar">Verificar un documento</a></li><li><a href="/desarrolladores">API para desarrolladores</a></li><li><a href="/registro">Crear cuenta gratis</a></li></ul></div>
     <div><p class="footer-title">Soluciones</p><ul>
       <li><a href="/soluciones#ventas">Ventas</a></li><li><a href="/soluciones#rrhh">Recursos Humanos</a></li>
       <li><a href="/soluciones#legal">Legal</a></li><li><a href="/soluciones#inmobiliario">Inmobiliario</a></li></ul></div>

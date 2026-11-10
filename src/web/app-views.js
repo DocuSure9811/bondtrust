@@ -19,7 +19,10 @@ export function authPage(config, mode, { next = '/app', plan = 'gratis' } = {}) 
     <p class="form-error" role="alert"></p>
     <button class="btn btn-primary btn-block btn-lg" type="submit">${isSignup ? 'Crear cuenta' : 'Ingresar'}</button>
   </form>
-  <p class="auth-switch">${isSignup ? '¿Ya tenés cuenta? <a href="/ingresar">Ingresá</a>' : '¿No tenés cuenta? <a href="/registro">Creala gratis</a>'}</p>
+  <p class="auth-switch">${(() => {
+    const q = next !== '/app' ? `?next=${encodeURIComponent(next)}` : '';
+    return isSignup ? `¿Ya tenés cuenta? <a href="/ingresar${q}">Ingresá</a>` : `¿No tenés cuenta? <a href="/registro${q}">Creala gratis</a>`;
+  })()}</p>
 </div></section>`;
   return page({
     config,
@@ -38,7 +41,7 @@ function appShell(config, user, { title, body, scripts, active = 'docs' }) {
   const shell = `<div class="app">
   <header class="app-header"><div class="wrap-app app-header-row">
     <a class="logo" href="/app" aria-label="DocSure, mis documentos">${LOGO_SVG}<span>DocSure</span></a>
-    <nav class="app-nav" aria-label="Aplicación"><a href="/app"${active === 'docs' ? ' aria-current="page"' : ''}>Documentos</a><a href="/app/nuevo"${active === 'new' ? ' aria-current="page"' : ''}>Nuevo sobre</a></nav>
+    <nav class="app-nav" aria-label="Aplicación"><a href="/app"${active === 'docs' ? ' aria-current="page"' : ''}>Documentos</a><a href="/app/nuevo"${active === 'new' ? ' aria-current="page"' : ''}>Nuevo sobre</a><a href="/app/api"${active === 'api' ? ' aria-current="page"' : ''}>API</a></nav>
     <div class="app-user"><span class="app-user-name">${escapeHtml(user.name)}</span><button class="btn btn-ghost btn-sm" type="button" id="logout">Salir</button></div>
   </div></header>
   ${body}
@@ -120,6 +123,49 @@ export function editorPage(config, user) {
   </section>
 </div>`,
     scripts: ['/static/editor.js'],
+  });
+}
+
+export function apiPage(config, user) {
+  const base = config.appUrl;
+  return appShell(config, user, {
+    title: 'API y desarrolladores',
+    active: 'api',
+    body: `<div class="wrap-app app-main">
+  <div class="app-title-row"><h1>API y desarrolladores</h1><a class="btn btn-ghost" href="/desarrolladores">Ver documentación</a></div>
+  <section class="card api-hint">
+    <h2>Integrá DocSure con tu asistente de IA</h2>
+    <p>Pegale esto a Claude, Cursor o tu IDE y hace la integración completa por vos:</p>
+    <pre class="code" id="ai-prompt">Integrá DocSure en este proyecto para enviar documentos a firmar. Seguí las instrucciones de ${config.siteUrl}/llms.txt (API base: ${base}/api/v1). Conectate con el flujo de agente para obtener la clave sin que yo la copie.</pre>
+    <button class="btn btn-outline btn-sm" type="button" data-copy="ai-prompt">Copiar instrucción</button>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Claves de API</h2></div>
+    <p class="muted small">Usalas en el encabezado <code>Authorization: Bearer ds_live_…</code>. La clave se muestra una sola vez.</p>
+    <form id="key-form" class="inline-form"><label class="visually-hidden" for="key-name">Nombre de la clave</label><input id="key-name" maxlength="80" placeholder="Ej.: Integración CRM" required><button class="btn btn-primary" type="submit">Crear clave</button></form>
+    <div id="new-key" class="new-secret" hidden></div>
+    <p class="form-error" role="alert" id="key-err"></p>
+    <ul class="rlist" id="keys"></ul>
+  </section>
+  <section class="card">
+    <div class="card-head"><h2>Webhooks</h2></div>
+    <p class="muted small">Te avisamos por HTTPS cuando algo cambia. Cada aviso va firmado con HMAC-SHA256 en <code>DocSure-Signature</code>.</p>
+    <form id="hook-form" class="inline-form"><label class="visually-hidden" for="hook-url">URL del webhook</label><input id="hook-url" type="url" maxlength="500" placeholder="https://tu-app.com/webhooks/docsure" required><button class="btn btn-primary" type="submit">Agregar webhook</button></form>
+    <div id="new-hook" class="new-secret" hidden></div>
+    <p class="form-error" role="alert" id="hook-err"></p>
+    <ul class="rlist" id="hooks"></ul>
+  </section>
+</div>`,
+    scripts: ['/static/api-panel.js'],
+  });
+}
+
+export function connectPage(config, user) {
+  return appShell(config, user, {
+    title: 'Conectar asistente',
+    active: 'api',
+    body: `<div class="wrap-app app-main"><div class="sign-card" id="connect"><p class="muted">Cargando…</p></div></div>`,
+    scripts: ['/static/connect.js'],
   });
 }
 

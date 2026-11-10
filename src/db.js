@@ -101,6 +101,56 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_envelope_idx ON events (envelope_id, id);
 
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS create_idempotency_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS envelopes_create_idem_idx ON envelopes (owner_id, create_idempotency_key) WHERE create_idempotency_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS api_keys (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  prefix text NOT NULL,
+  key_hash text NOT NULL UNIQUE,
+  created_via text NOT NULL DEFAULT 'panel',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_used_at timestamptz,
+  revoked_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS api_keys_user_idx ON api_keys (user_id);
+
+CREATE TABLE IF NOT EXISTS device_codes (
+  device_code_hash text PRIMARY KEY,
+  user_code text NOT NULL UNIQUE,
+  client_name text NOT NULL,
+  user_id uuid REFERENCES users(id) ON DELETE CASCADE,
+  approved_at timestamptz,
+  denied_at timestamptz,
+  consumed_at timestamptz,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS webhooks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  url text NOT NULL,
+  events text[] NOT NULL,
+  secret text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS webhooks_user_idx ON webhooks (user_id);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id bigserial PRIMARY KEY,
+  webhook_id uuid NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+  event_id text NOT NULL,
+  event_type text NOT NULL,
+  attempt int NOT NULL,
+  status_code int,
+  error text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS webhook_deliveries_idx ON webhook_deliveries (webhook_id, id DESC);
+
 CREATE TABLE IF NOT EXISTS emails (
   id bigserial PRIMARY KEY,
   envelope_id uuid REFERENCES envelopes(id) ON DELETE CASCADE,

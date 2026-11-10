@@ -7,7 +7,7 @@ export const PLANS_VIEW = [
   {
     key: 'gratis', name: 'Gratis', monthly: 0, annual: 0, unit: 'para siempre',
     pitch: 'Para empezar a firmar hoy, sin tarjeta.',
-    features: ['5 sobres por mes', 'Firmantes ilimitados por sobre', 'Verificación del firmante con código por email', 'Sello digital X.509 y certificado de finalización', 'Registro de auditoría completo', 'Verificador público de documentos'],
+    features: ['5 sobres por mes', 'Firmantes ilimitados por sobre', 'Verificación del firmante con código por email', 'Sello digital X.509 y certificado de finalización', 'Registro de auditoría completo', 'Verificador público de documentos', 'API REST, webhooks y conexión con IA'],
   },
   {
     key: 'personal', name: 'Personal', monthly: 9, annual: 7, unit: 'por mes',
@@ -22,7 +22,7 @@ export const PLANS_VIEW = [
   {
     key: 'empresa', name: 'Empresa', monthly: 36, annual: 29, unit: 'por usuario / mes',
     pitch: 'Para automatizar e integrar.',
-    features: ['Todo lo del plan Profesional', `API REST y webhooks firmados ${soon}`, `Inicio de sesión único (SSO) ${soon}`, `Roles y permisos por equipo ${soon}`, `Firma electrónica avanzada (AES) ${soon}`, 'Soporte prioritario'],
+    features: ['Todo lo del plan Profesional', `Inicio de sesión único (SSO) ${soon}`, `Roles y permisos por equipo ${soon}`, `Firma electrónica avanzada (AES) ${soon}`, 'Soporte prioritario'],
   },
 ];
 
@@ -82,8 +82,8 @@ const FEATURES = [
   ['ic-shield', 'Identidad verificada', 'Antes de firmar, cada persona confirma un código de un solo uso enviado a su email.'],
   ['ic-seal', 'Sello digital X.509', 'El PDF final queda sellado criptográficamente. Cualquier cambio posterior lo invalida.'],
   ['ic-list', 'Auditoría completa', 'Certificado de finalización con fechas, IP, navegador y cada paso del proceso.'],
-  ['ic-order', 'Firma en orden', 'Definí quién firma primero. DocSure avisa al siguiente apenas firma el anterior.'],
   ['ic-search', 'Verificador público', 'Cualquiera puede comprobar en segundos que un documento firmado es auténtico.'],
+  ['ic-list', 'API y conexión con IA', 'Tu asistente de IA se conecta con un clic y envía documentos por vos. API y webhooks en todos los planes.'],
 ];
 
 export function home(config, user) {
@@ -184,7 +184,8 @@ export function pricing(config, user) {
     ['Marca propia', '—', '—', soon, soon],
     ['Envío masivo desde CSV', '—', '—', soon, soon],
     ['SMS de verificación', '—', '—', `20 / mes ${soon}`, `50 / mes ${soon}`],
-    ['API REST y webhooks', '—', '—', '—', soon],
+    ['API REST y webhooks firmados', check, check, check, check],
+    ['Conexión con asistentes de IA (Claude, Cursor…)', check, check, check, check],
     ['SSO y roles', '—', '—', '—', soon],
   ];
   const body = `
@@ -244,7 +245,7 @@ ${blocks
   <ul class="roadmap">
     <li>Plantillas reutilizables y compartidas ${soon}</li><li>Recordatorios y vencimientos automáticos ${soon}</li>
     <li>Envío masivo desde CSV ${soon}</li><li>Marca propia (logo y colores) ${soon}</li>
-    <li>API REST y webhooks firmados con HMAC ${soon}</li><li>Verificación por SMS y WhatsApp ${soon}</li>
+    <li>Verificación por SMS y WhatsApp ${soon}</li>
     <li>Firma electrónica avanzada (AES) ${soon}</li><li>Inicio de sesión único (SSO) ${soon}</li>
   </ul>
 </div></section>`;
@@ -404,4 +405,4 @@ export function legal(config, user, slug) {
   return page({ config, user, path: `/legal/${slug}`, title: doc.title, description: doc.description, body });
 }
 
-export const SITEMAP_PATHS = ['/', '/producto', '/precios', '/soluciones', '/seguridad', '/verificar', '/validez-legal', '/registro', '/legal/terminos', '/legal/privacidad', '/legal/cookies'];
+export const SITEMAP_PATHS = ['/', '/producto', '/precios', '/soluciones', '/seguridad', '/verificar', '/desarrolladores', '/validez-legal', '/registro', '/legal/terminos', '/legal/privacidad', '/legal/cookies'];

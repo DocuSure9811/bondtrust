@@ -6,7 +6,11 @@ import { sealFingerprint, verifySeal } from './pdf/verify.js';
 import { planOf } from './plans.js';
 import { createRateLimiter } from './rate-limit.js';
 import { hashPassword, hmac, randomToken, safeEqualHex, sha256Hex, verifyPassword } from './security.js';
+import { createApiV1 } from './api-v1.js';
+import * as apiKeys from './services/apikeys.js';
 import * as env from './services/envelopes.js';
+import * as webhooks from './services/webhooks.js';
+import * as devdocs from './web/devdocs.js';
 import { HttpError, cleanEmail, cleanPassword, cleanText } from './validate.js';
 import * as views from './web/app-views.js';
 import * as marketing from './web/marketing.js';
@@ -95,6 +99,9 @@ export function createApp({ pool, config, mailer }) {
     }),
   );
 
+  // API pública (Bearer, sin cookies): va antes de la protección CSRF del panel.
+  app.use('/api/v1', createApiV1({ ctx, limit, clientMeta, sendPdf }));
+
   // Protección CSRF: toda mutación de la API exige un encabezado que un formulario de otro sitio no puede enviar.
   app.use('/api', (req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.headers['x-docsure'] !== '1') {
@@ -146,18 +153,38 @@ export function createApp({ pool, config, mailer }) {
     return out ? html(res, out) : next();
   });
 
-  const safeNext = (value) => (typeof value === 'string' && /^\/app(\/[\w/-]*)?$/.test(value) ? value : '/app');
-  app.get('/ingresar', (req, res) => (req.user ? res.redirect(302, '/app') : html(res, views.authPage(config, 'ingresar', { next: safeNext(req.query.next) }))));
+  const safeNext = (value) => (typeof value === 'string' && /^\/app(\/[\w/-]*)?(\?codigo=[A-Z0-9-]{9})?$/.test(value) ? value : '/app');
+  app.get('/ingresar', (req, res) => (req.user ? res.redirect(302, safeNext(req.query.next)) : html(res, views.authPage(config, 'ingresar', { next: safeNext(req.query.next) }))));
   app.get('/registro', (req, res) => {
-    if (req.user) return res.redirect(302, '/app');
+    if (req.user) return res.redirect(302, safeNext(req.query.next));
     const plan = typeof req.query.plan === 'string' && marketing.PLANS_VIEW.some((p) => p.key === req.query.plan) ? req.query.plan : 'gratis';
-    html(res, views.authPage(config, 'registro', { plan }));
+    html(res, views.authPage(config, 'registro', { plan, next: safeNext(req.query.next) }));
   });
+
+  // ---------- Desarrolladores ----------
+  app.get('/desarrolladores', (req, res) => html(res, devdocs.developersPage(config, req.user)));
+  app.get('/llms.txt', (req, res) => res.type('text/plain; charset=utf-8').set('Cache-Control', 'public, max-age=3600').send(devdocs.llmsTxt(config)));
+  app.get('/openapi.json', (req, res) => res.set({ 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' }).json(devdocs.openapiSpec(config)));
 
   // ---------- App del remitente ----------
   app.get('/app', requirePageUser, (req, res) => html(res, views.dashboardPage(config, req.user)));
   app.get('/app/nuevo', requirePageUser, (req, res) => html(res, views.editorPage(config, req.user)));
   app.get('/app/sobres/:id', requirePageUser, (req, res) => html(res, views.envelopePage(config, req.user)));
+  app.get('/app/api', requirePageUser, (req, res) => html(res, views.apiPage(config, req.user)));
+  app.get('/app/conectar', requirePageUser, (req, res) => html(res, views.connectPage(config, req.user)));
+
+  // ---------- API del panel: claves, webhooks y autorización de agentes ----------
+  app.get('/api/claves', requireUser, asyncRoute(async (req, res) => res.json({ data: await apiKeys.listApiKeys(ctx, req.user.id) })));
+  app.post('/api/claves', requireUser, json, asyncRoute(async (req, res) => res.status(201).json(await apiKeys.createApiKey(ctx, req.user.id, req.body.name))));
+  app.delete('/api/claves/:id', requireUser, asyncRoute(async (req, res) => res.json(await apiKeys.revokeApiKey(ctx, req.user.id, req.params.id))));
+  app.get('/api/webhooks', requireUser, asyncRoute(async (req, res) => res.json({ data: await webhooks.listWebhooks(ctx, req.user.id), events: webhooks.WEBHOOK_EVENTS })));
+  app.post('/api/webhooks', requireUser, json, asyncRoute(async (req, res) => res.status(201).json(await webhooks.createWebhook(ctx, req.user.id, req.body))));
+  app.delete('/api/webhooks/:id', requireUser, asyncRoute(async (req, res) => res.json(await webhooks.deleteWebhook(ctx, req.user.id, req.params.id))));
+  app.get('/api/agente', requireUser, asyncRoute(async (req, res) => res.json(await apiKeys.deviceInfo(ctx, req.query.codigo))));
+  app.post('/api/agente', requireUser, json, asyncRoute(async (req, res) => {
+    limit(`agent-decide:${req.user.id}`, 30, 3600_000);
+    res.json(await apiKeys.decideDevice(ctx, req.user.id, req.body.codigo, req.body.aprobar === true));
+  }));
 
   // ---------- Firmante ----------
   app.get('/firmar/:token', (req, res) => html(res, views.signPage(config)));
