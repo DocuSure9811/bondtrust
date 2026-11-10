@@ -166,7 +166,8 @@ export async function ownedEnvelope(db, ownerId, id, { lock = false } = {}) {
   const { rows } = await db.query(
     `SELECT id, owner_id, title, message, status, sequential, page_count, original_sha256, final_sha256,
             send_idempotency_key, expires_at, sent_at, completed_at, created_at, language, expire_days,
-            reminder_days, corrected_from, template_id, documents, folder_id, delivery
+            reminder_days, corrected_from, template_id, documents, folder_id, delivery,
+            to_char(contract_end, 'YYYY-MM-DD') AS contract_end, renewal_notice_days, renewal_notified_at, root_id, version
        FROM envelopes WHERE id = $1 AND owner_id = $2 ${lock ? 'FOR UPDATE' : ''}`,
     [id, ownerId],
   );
@@ -784,6 +785,10 @@ export async function apiEnvelope(ctx, ownerId, id) {
     original_sha256: e.original_sha256,
     final_sha256: e.final_sha256,
     documents: e.documents,
+    version: e.version,
+    root_id: e.root_id,
+    contract_end: e.contract_end,
+    renewal_notice_days: e.renewal_notice_days,
     recipients: recipients.map((r) => ({
       id: r.id, name: r.name, email: r.email, role: r.role, routing_order: r.routing_order,
       status: r.status, signed_at: r.signed_at, declined_at: r.declined_at, decline_reason: r.decline_reason,
@@ -845,14 +850,22 @@ export async function createFromApi(ctx, owner, body, idempotencyKey, meta) {
 
 // ---------- Corrección, vencimiento, firma en persona y tareas programadas ----------
 
-/** Copia un sobre como borrador nuevo (documento, destinatarios y campos). */
-async function cloneAsDraft(db, src, correctedFrom) {
+/**
+ * Copia un sobre como borrador nuevo (documento, destinatarios, campos y datos del contrato).
+ * Una corrección conserva la versión; una versión nueva queda enlazada a la primera y suma uno.
+ */
+export async function cloneAsDraft(db, src, { correctedFrom = null, newVersion = false } = {}) {
   const { rows: [created] } = await db.query(
     `INSERT INTO envelopes (owner_id, title, message, sequential, language, expire_days, reminder_days,
-                            original_pdf, original_sha256, page_count, corrected_from, template_id, documents, folder_id)
-     SELECT owner_id, title, message, sequential, language, expire_days, reminder_days,
-            original_pdf, original_sha256, page_count, $2, template_id, documents, folder_id FROM envelopes WHERE id = $1 RETURNING id`,
-    [src, correctedFrom],
+                            original_pdf, original_sha256, page_count, corrected_from, template_id, documents, folder_id,
+                            contract_end, renewal_notice_days, root_id, version)
+     SELECT s.owner_id, s.title, s.message, s.sequential, s.language, s.expire_days, s.reminder_days,
+            s.original_pdf, s.original_sha256, s.page_count, $2, s.template_id, s.documents, s.folder_id,
+            s.contract_end, s.renewal_notice_days,
+            CASE WHEN $3 THEN coalesce(s.root_id, s.id) ELSE s.root_id END,
+            CASE WHEN $3 THEN (SELECT max(v.version) + 1 FROM envelopes v WHERE v.id = coalesce(s.root_id, s.id) OR v.root_id = coalesce(s.root_id, s.id)) ELSE s.version END
+       FROM envelopes s WHERE s.id = $1 RETURNING id, version`,
+    [src, correctedFrom, newVersion],
   );
   const { rows: recips } = await db.query('SELECT id, position, name, email, role, routing_order FROM recipients WHERE envelope_id = $1 ORDER BY position', [src]);
   const map = new Map();
@@ -866,7 +879,7 @@ async function cloneAsDraft(db, src, correctedFrom) {
   const { rows: fields } = await db.query('SELECT id, recipient_id, type, page, x, y, w, h, required, label, options, validation, formula, cond_field_id, cond_value FROM fields WHERE envelope_id = $1', [src]);
   const copy = fieldsAsInput(fields, (f) => f.recipient_id).map((f) => ({ ...f, showIf: f.showIf && fields.some((x) => x.id === f.showIf.key) ? f.showIf : null }));
   await insertFields(db, created.id, copy, (rid) => map.get(rid));
-  await addEvent(db, created.id, 'created', { data: { corrected_from: correctedFrom } });
+  await addEvent(db, created.id, 'created', { data: newVersion ? { version_of: src, version: created.version } : { corrected_from: correctedFrom } });
   return created.id;
 }
 
@@ -884,7 +897,7 @@ export async function correctEnvelope(ctx, ownerId, id, meta) {
       voided = true;
     }
     await addEvent(db, id, 'corrected', meta);
-    return cloneAsDraft(db, id, id);
+    return cloneAsDraft(db, id, { correctedFrom: id });
   });
   if (voided) emit(ctx, id, 'envelope.voided', { corrected_by: newId });
   return { id: newId };

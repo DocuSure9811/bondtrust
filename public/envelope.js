@@ -25,8 +25,23 @@ const EVENT_LABELS = {
   voided: 'Sobre anulado',
   expired: 'Sobre vencido',
   completed: 'Sobre completado y sellado',
+  contract_updated: 'Se actualizó el vencimiento del contrato',
+  version_created: 'Se creó una versión nueva',
+  renewal_notified: 'Aviso de renovación enviado',
 };
-const LANG = { es: 'Español', en: 'English', pt: 'Português' };
+const LANG = { es: 'Español', en: 'English', pt: 'Português', fr: 'Français', de: 'Deutsch', it: 'Italiano' };
+const NOTICE = [7, 15, 30, 60, 90];
+const STATUS_TEXT = { draft: 'Borrador', sent: 'En curso', completed: 'Completado', declined: 'Rechazado', voided: 'Anulado', expired: 'Vencido' };
+
+/** Texto del estado del aviso de renovación. */
+function contractStatus(c) {
+  if (!c.contract_end) return 'Cargá la fecha de vencimiento y te avisamos por email antes de que venza.';
+  const end = new Date(`${c.contract_end}T12:00:00Z`);
+  const days = Math.round((end - Date.now()) / 86400000);
+  const when = days > 0 ? `Vence en ${days} día(s)` : days === 0 ? 'Vence hoy' : 'Venció';
+  const notice = c.renewal_notified_at ? 'Ya te enviamos el aviso.' : `Te avisamos por email ${c.renewal_notice_days} días antes.`;
+  return `${when} (${end.toLocaleDateString('es-AR', { timeZone: 'UTC' })}). ${notice}`;
+}
 
 async function download(which, title) {
   const res = await api(`/api/sobres/${id}/${which}.pdf`, { raw: true });
@@ -45,7 +60,7 @@ function say(text, ok = false) {
 }
 
 async function load() {
-  const [{ envelope: e, recipients, events, attachments }, { data: folders }] = await Promise.all([api(`/api/sobres/${id}`), api('/api/carpetas')]);
+  const [{ envelope: e, recipients, events, attachments }, { data: folders }, contract] = await Promise.all([api(`/api/sobres/${id}`), api('/api/carpetas'), api(`/api/sobres/${id}/contrato`)]);
   if (e.status === 'draft' && e.can_edit) return location.replace(`/app/nuevo?id=${id}`);
   const edit = e.can_edit;
   const byId = new Map(recipients.map((r) => [r.id, r]));
@@ -78,6 +93,17 @@ async function load() {
       ${e.final_sha256 ? `<p class="fine">Huella SHA-256 del documento final: <code class="hash">${esc(e.final_sha256)}</code></p>` : ''}
       <p class="fine">Huella SHA-256 del original: <code class="hash">${esc(e.original_sha256)}</code></p>
       ${e.documents.length > 1 ? `<p class="fine"><strong>Documentos (${e.documents.length}):</strong> ${e.documents.map((d) => `${esc(d.name)} (${d.pages} pág.)`).join(' · ')}</p>` : ''}
+    </section>
+    <section class="card" id="contract"><h2>Contrato</h2>
+      <div class="contract-row">
+        <label>Vencimiento del contrato<input type="date" id="c-end" value="${esc(contract.contract_end || '')}"${edit ? '' : ' disabled'}></label>
+        <label>Avisarme<select id="c-notice"${edit ? '' : ' disabled'}>${NOTICE.map((d) => `<option value="${d}"${d === contract.renewal_notice_days ? ' selected' : ''}>${d} días antes</option>`).join('')}</select></label>
+        ${edit ? '<button class="btn btn-ghost btn-sm" id="c-save" type="button">Guardar</button>' : ''}
+      </div>
+      <p class="fine" id="c-status">${contractStatus(contract)}</p>
+      <h3 class="small-title">Versiones</h3>
+      <ol class="versions">${contract.versions.map((v) => `<li${v.id === id ? ' aria-current="true"' : ''}><a href="/app/sobres/${esc(v.id)}">Versión ${v.version}</a> · ${esc(STATUS_TEXT[v.status] || v.status)} · ${fmtDate(v.completed_at || v.created_at)}</li>`).join('')}</ol>
+      ${edit ? '<button class="btn btn-ghost btn-sm" id="new-version" type="button">Nueva versión</button>' : ''}
     </section>
     <section class="card"><h2>Historial</h2><ol class="timeline">${events.map((ev) => `
       <li><time datetime="${esc(ev.created_at)}">${fmtDate(ev.created_at, true)}</time>${esc(EVENT_LABELS[ev.type] || ev.type)}${ev.recipient_id && byId.get(ev.recipient_id) ? ` · ${esc(byId.get(ev.recipient_id).name)}` : ''}</li>`).join('')}</ol></section>
@@ -124,6 +150,18 @@ async function load() {
     const extra = e.status === 'sent' ? ' El sobre actual se anula (no consume tu cupo).' : '';
     if (!confirm(`Se crea un borrador idéntico para que lo edites y lo vuelvas a enviar.${extra} ¿Continuar?`)) return;
     const { id: newId } = await api(`/api/sobres/${id}/corregir`, { method: 'POST' });
+    location.href = `/app/nuevo?id=${newId}`;
+  });
+  on('#c-save', async (b) => {
+    b.disabled = true;
+    const saved = await api(`/api/sobres/${id}/contrato`, { method: 'PUT', body: { contract_end: root.querySelector('#c-end').value || null, renewal_notice_days: Number(root.querySelector('#c-notice').value) } });
+    root.querySelector('#c-status').textContent = contractStatus(saved);
+    b.disabled = false;
+    say(saved.contract_end ? 'Vencimiento guardado.' : 'Vencimiento quitado.', true);
+  });
+  on('#new-version', async () => {
+    if (!confirm('Se crea un borrador con los mismos documentos, firmantes y campos, enlazado como versión nueva. ¿Continuar?')) return;
+    const { id: newId } = await api(`/api/sobres/${id}/nueva-version`, { method: 'POST' });
     location.href = `/app/nuevo?id=${newId}`;
   });
   on('#save-tpl', async () => {

@@ -74,7 +74,7 @@ const TOPICS = {
   inicio: 'Primeros pasos',
   enviar: 'Enviar documentos',
   firmar: 'Firmar',
-  organizar: 'Organizar',
+  organizar: 'Organizar y contratos',
   cuenta: 'Cuenta, equipo y seguridad',
   integrar: 'API e integraciones',
 };
@@ -154,6 +154,12 @@ export const ARTICLES = [
 <li>Usá <strong>Buscar sobres</strong> por título, firmante o email, y filtrá por estado y fechas.</li>
 <li><strong>Exportar CSV</strong> descarga el listado filtrado, listo para Excel o Google Sheets.</li>
 </ul>`],
+  ['vencimientos-contratos', 'organizar', 'Vencimientos, renovaciones y versiones de contratos', 'Que ningún contrato se venza sin que te enteres.', `
+<ol>
+<li>En el detalle de un sobre, completá <strong>Vencimiento del contrato</strong> y, si querés, con cuántos días de anticipación avisarte.</li>
+<li>DocSure te manda un email antes de la fecha y el contrato aparece en <strong>Próximos vencimientos</strong> del panel.</li>
+<li>Para renovarlo o cambiarlo, tocá <strong>Nueva versión</strong>: se crea un borrador con los mismos documentos, firmantes y campos, y las versiones quedan enlazadas en el historial.</li>
+</ol>`],
   ['equipo', 'cuenta', 'Trabajar en equipo', 'Invitá personas, asigná roles y compartí plantillas.', `
 <ol>
 <li>En <strong>Equipo</strong>, creá el equipo con un nombre.</li>
@@ -191,14 +197,14 @@ export function helpIndex(config, user) {
   <label class="help-search"><span class="sr-only">Buscar en la ayuda</span><input type="search" id="help-q" placeholder="Buscar: plantillas, código, carpetas…" autocomplete="off"></label>
 </div></section>
 <section class="section section-tight"><div class="wrap">
-${Object.entries(TOPICS).map(([key, name]) => `<div class="help-topic" data-topic="${key}"><h2 class="h3">${name}</h2><div class="solutions-grid">${ARTICLES.filter((a) => a[1] === key).map(([slug, , title, summary]) => `<article class="solution help-item" data-text="${`${title} ${summary}`.toLowerCase()}"><h3><a href="/ayuda/${slug}">${title}</a></h3><p>${summary}</p></article>`).join('')}</div></div>`).join('')}
+${Object.entries(TOPICS).map(([key, name]) => `<div class="help-topic" data-topic="${key}"><h2 class="h3">${name}</h2><div class="solutions-grid">${ARTICLES.filter((a) => a[1] === key).map(([slug, , title, summary, body]) => `<article class="solution help-item" data-text="${`${title} ${summary} ${body.replace(/<[^>]+>/g, ' ')}`.replace(/\s+/g, ' ').replace(/"/g, '').toLowerCase()}"><h3><a href="/ayuda/${slug}">${title}</a></h3><p>${summary}</p></article>`).join('')}</div></div>`).join('')}
 <p class="center muted" id="help-empty" hidden>No encontramos artículos con esa búsqueda.</p>
 </div></section>
 <section class="section section-soft"><div class="wrap narrow center">
   <h2 class="section-title">¿No encontraste lo que buscabas?</h2>
   <p class="section-lead">Revisá las <a href="/precios#preguntas">preguntas frecuentes</a>, la <a href="/desarrolladores">documentación de la API</a> o el <a href="/blog">blog</a>.</p>
 </div></section>`;
-  return page({ config, user, path: '/ayuda', title: 'Centro de ayuda', description: 'Guías paso a paso de DocSure: enviar documentos, firmar, plantillas, carpetas, equipo, seguridad y API.', body, scripts: ['/static/help.js'] });
+  return page({ config, user, path: '/ayuda', title: 'Centro de ayuda', description: 'Guías paso a paso de DocSure: enviar documentos, firmar, plantillas, carpetas, vencimientos de contratos, equipo, seguridad y API.', body, scripts: ['/static/help.js'] });
 }
 
 export function helpArticle(config, user, slug) {

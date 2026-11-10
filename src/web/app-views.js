@@ -55,6 +55,7 @@ export function dashboardPage(config, user) {
     body: `<div class="wrap-app app-main">
   <div class="app-title-row"><h1>Mis documentos</h1><a class="btn btn-primary" href="/app/nuevo">+ Nuevo sobre</a></div>
   <section class="stats" id="stats" aria-label="Resumen"></section>
+  <section class="card expiring" id="expiring" aria-labelledby="expiring-title" hidden><h2 id="expiring-title">Próximos vencimientos</h2><ul class="rlist" id="expiring-list"></ul></section>
   <div class="tabs" role="tablist" id="filters">
     <button role="tab" aria-selected="true" data-filter="all">Todos</button><button role="tab" aria-selected="false" data-filter="sent">En curso</button>
     <button role="tab" aria-selected="false" data-filter="completed">Completados</button><button role="tab" aria-selected="false" data-filter="draft">Borradores</button>

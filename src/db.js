@@ -282,6 +282,15 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS embed_origins text[] NOT NULL DEFAULT
 -- v0.6: la marca por defecto pasó de verde a azul; quien guardó el verde por defecto vuelve al nuevo
 UPDATE users SET brand_color = NULL WHERE brand_color = '#0e7c66';
 
+-- v0.7: gestión de contratos (vencimiento, aviso de renovación y versiones)
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS contract_end date;
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS renewal_notice_days int NOT NULL DEFAULT 30;
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS renewal_notified_at timestamptz;
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS root_id uuid REFERENCES envelopes(id) ON DELETE SET NULL;
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS version int NOT NULL DEFAULT 1;
+CREATE INDEX IF NOT EXISTS envelopes_contract_end_idx ON envelopes (contract_end) WHERE contract_end IS NOT NULL;
+CREATE INDEX IF NOT EXISTS envelopes_root_idx ON envelopes (root_id) WHERE root_id IS NOT NULL;
+
 -- v0.5: contactos
 CREATE TABLE IF NOT EXISTS contacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

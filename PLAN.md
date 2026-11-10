@@ -1,4 +1,4 @@
-# DocSure — plan v0.7
+# DocSure — plan v0.7Hecho |Hecho |Hecho |Hecho |
 
 Cada etapa: implementación + tests en el build + una prueba puntual en producción (un navegador) + deploy verificado.
 

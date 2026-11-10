@@ -3,6 +3,7 @@ import * as account from './services/account.js';
 import * as keys from './services/apikeys.js';
 import * as attachments from './services/attachments.js';
 import * as contacts from './services/contacts.js';
+import * as contracts from './services/contracts.js';
 import * as folders from './services/folders.js';
 import * as teams from './services/teams.js';
 import * as env from './services/envelopes.js';
@@ -133,6 +134,11 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
     await env.extendExpiration(ctx, req.apiUser.id, req.params.id, req.body?.days, clientMeta(req));
     res.json(await env.apiEnvelope(ctx, req.apiUser.id, req.params.id));
   }));
+
+  router.get('/envelopes/:id/contract', asyncRoute(async (req, res) => res.json(await contracts.contractDetail(ctx, req.apiUser.id, req.params.id))));
+  router.put('/envelopes/:id/contract', asyncRoute(async (req, res) => res.json(await contracts.setContract(ctx, req.apiUser.id, req.params.id, req.body || {}, clientMeta(req)))));
+  router.post('/envelopes/:id/versions', asyncRoute(async (req, res) => res.status(201).json(await contracts.newVersion(ctx, req.apiUser.id, req.params.id, clientMeta(req)))));
+  router.get('/contracts/expiring', asyncRoute(async (req, res) => res.json({ data: await contracts.expiringContracts(ctx, req.apiUser.id, { days: req.query.days, scope: req.query.scope === 'team' ? 'team' : 'mine' }) })));
 
   router.get('/templates', asyncRoute(async (req, res) => {
     const list = await templatesSvc.listTemplates(ctx, req.apiUser.id);

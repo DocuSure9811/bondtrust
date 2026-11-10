@@ -11,6 +11,7 @@ import * as apiKeys from './services/apikeys.js';
 import * as account from './services/account.js';
 import * as attachments from './services/attachments.js';
 import * as contacts from './services/contacts.js';
+import * as contracts from './services/contracts.js';
 import * as folders from './services/folders.js';
 import * as teams from './services/teams.js';
 import * as accountSecurity from './services/security.js';
@@ -265,6 +266,12 @@ export function createApp({ pool, config, mailer }) {
   app.put('/api/carpetas/:id', requireUser, json, asyncRoute(async (req, res) => res.json(await folders.renameFolder(ctx, req.user.id, req.params.id, req.body))));
   app.delete('/api/carpetas/:id', requireUser, asyncRoute(async (req, res) => res.json(await folders.deleteFolder(ctx, req.user.id, req.params.id))));
   app.put('/api/sobres/:id/carpeta', requireUser, json, asyncRoute(async (req, res) => res.json(await folders.moveEnvelope(ctx, req.user.id, req.params.id, req.body.folderId ?? null))));
+
+  // ---------- API del panel: contratos (vencimiento, renovación y versiones) ----------
+  app.get('/api/sobres/:id/contrato', requireUser, asyncRoute(async (req, res) => res.json(await contracts.contractDetail(ctx, req.user.id, req.params.id))));
+  app.put('/api/sobres/:id/contrato', requireUser, json, asyncRoute(async (req, res) => res.json(await contracts.setContract(ctx, req.user.id, req.params.id, req.body, clientMeta(req)))));
+  app.post('/api/sobres/:id/nueva-version', requireUser, asyncRoute(async (req, res) => res.status(201).json(await contracts.newVersion(ctx, req.user.id, req.params.id, clientMeta(req)))));
+  app.get('/api/vencimientos', requireUser, asyncRoute(async (req, res) => res.json({ data: await contracts.expiringContracts(ctx, req.user.id, { days: req.query.dias, scope: req.query.alcance === 'equipo' ? 'team' : 'mine' }) })));
 
   // ---------- API del panel: contactos ----------
   app.get('/api/contactos', requireUser, asyncRoute(async (req, res) => res.json({ data: await contacts.listContacts(ctx, req.user.id, req.query.q) })));

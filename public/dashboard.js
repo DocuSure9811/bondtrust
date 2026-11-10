@@ -71,8 +71,21 @@ function renderBulk() {
   $('bulk-move').disabled = !folders.length;
 }
 
+/** Contratos que vencen en los próximos 90 días (o vencieron hace poco). */
+function renderExpiring(rows) {
+  $('expiring').hidden = rows.length === 0;
+  $('expiring-list').innerHTML = rows.map((c) => {
+    const d = Number(c.days_left);
+    const when = d > 1 ? `Vence en ${d} días` : d === 1 ? 'Vence mañana' : d === 0 ? 'Vence hoy' : `Venció hace ${-d} día(s)`;
+    return `<li class="${d < 0 ? 'is-late' : d <= 30 ? 'is-soon' : ''}"><div><strong><a href="/app/sobres/${c.id}">${esc(c.title)}</a></strong><small>${when} · ${new Date(`${c.contract_end}T12:00:00Z`).toLocaleDateString('es-AR', { timeZone: 'UTC' })}${c.version > 1 ? ` · versión ${c.version}` : ''}</small></div><a class="btn btn-ghost btn-sm" href="/app/sobres/${c.id}#contract">Ver</a></li>`;
+  }).join('');
+}
+
 async function reload() {
-  [envelopes, folders] = await Promise.all([api(`/api/sobres${scope === 'team' ? '?alcance=equipo' : ''}`).then((d) => d.envelopes), api('/api/carpetas').then((d) => d.data)]);
+  const q = scope === 'team' ? '?alcance=equipo' : '';
+  let expiring;
+  [envelopes, folders, expiring] = await Promise.all([api(`/api/sobres${q}`).then((d) => d.envelopes), api('/api/carpetas').then((d) => d.data), api(`/api/vencimientos${q}`).then((d) => d.data)]);
+  renderExpiring(expiring);
   for (const id of [...selected]) if (!envelopes.some((e) => e.id === id)) selected.delete(id);
   renderFolders();
   render();

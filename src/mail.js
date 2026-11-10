@@ -250,6 +250,19 @@ export const templates = {
       text: `"${title}" venció sin todas las firmas. Ver: ${url}`,
     };
   },
+  renewal({ ownerName, title, endDate, daysLeft, url }) {
+    const when = daysLeft > 1 ? `vence en ${daysLeft} días` : daysLeft === 1 ? 'vence mañana' : daysLeft === 0 ? 'vence hoy' : 'ya venció';
+    return {
+      subject: `Contrato por vencer: ${title}`,
+      html: layout({
+        title: 'Un contrato está por vencer',
+        intro: `<p>Hola ${escapeHtml(ownerName)}, el contrato <strong>${escapeHtml(title)}</strong> ${when} (${escapeHtml(endDate)}).</p><p>Si querés renovarlo, abrí el sobre y tocá <strong>Nueva versión</strong>: se arma un borrador con los mismos documentos, firmantes y campos.</p>`,
+        buttonText: 'Ver el contrato',
+        buttonUrl: url,
+      }),
+      text: `El contrato "${title}" ${when} (${endDate}). Ver: ${url}`,
+    };
+  },
 };
 
 export function createMailer({ pool, resendApiKey, mailFrom, forceOutbox = false }) {

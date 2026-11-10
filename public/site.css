@@ -526,8 +526,8 @@ dialog::backdrop { background: rgba(12, 26, 46, .55); }
 .sig-gen .pad-lg { height: 240px; }
 .sig-gen label { display: grid; gap: 6px; font-weight: 600; }
 .sig-gen input { font: inherit; padding: .6em .8em; border: 1px solid var(--line); border-radius: 10px; }
-.gen-styles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 14px; }
-.gen-style { font-size: 2rem; min-height: 84px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.gen-styles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.gen-style { font-size: 1.7rem; min-height: 84px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .gen-style[aria-checked="true"] { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-100); }
 .gen-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 .gen-colors { display: flex; gap: 8px; }
@@ -540,3 +540,15 @@ dialog::backdrop { background: rgba(12, 26, 46, .55); }
 .help-topic { margin-bottom: 34px; }
 .help-topic h2 { margin-bottom: 12px; }
 .help-item h3 { font-size: 1.05rem; margin: 0 0 6px; }
+@media (max-width: 560px) { .gen-styles { grid-template-columns: 1fr; } }
+
+/* v0.7: contratos */
+.contract-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.contract-row label { display: grid; gap: 4px; font-size: .85rem; font-weight: 600; }
+.contract-row input, .contract-row select { font: inherit; padding: .45em .6em; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.versions { padding-left: 1.2em; margin: 6px 0 12px; font-size: .9rem; }
+.versions li[aria-current="true"] { font-weight: 700; }
+.expiring { margin: 0 0 18px; }
+.expiring h2 { font-size: 1rem; margin: 0 0 8px; }
+.expiring li.is-soon small { color: #9a5b00; }
+.expiring li.is-late small { color: var(--danger); }
