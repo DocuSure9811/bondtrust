@@ -16,7 +16,7 @@ test('contraseñas con scrypt', async () => {
 });
 
 test('páginas públicas con SEO completo', async () => {
-  for (const path of ['/', '/producto', '/precios', '/soluciones', '/seguridad', '/verificar', '/desarrolladores', '/integraciones', '/tipos-de-firma', '/comparar/docusign', '/blog', '/blog/que-es-la-firma-electronica', '/blog/firma-electronica-vs-firma-digital', '/blog/como-detectar-emails-de-firma-falsos', '/acceder', '/validez-legal', '/legal/terminos', '/legal/privacidad', '/legal/cookies', '/registro']) {
+  for (const path of ['/', '/producto', '/precios', '/soluciones', '/seguridad', '/verificar', '/desarrolladores', '/integraciones', '/tipos-de-firma', '/comparar/docusign', '/blog', '/blog/que-es-la-firma-electronica', '/blog/firma-electronica-vs-firma-digital', '/blog/como-detectar-emails-de-firma-falsos', '/blog/como-firmar-un-contrato-de-alquiler-online', '/blog/firma-electronica-para-recursos-humanos', '/blog/verificacion-en-dos-pasos', '/soluciones/ventas', '/soluciones/recursos-humanos', '/soluciones/legal', '/soluciones/compras', '/soluciones/inmobiliarias', '/soluciones/servicios-financieros', '/soluciones/salud', '/soluciones/educacion', '/acceder', '/validez-legal', '/legal/terminos', '/legal/privacidad', '/legal/cookies', '/registro']) {
     const res = await fetch(t.base + path);
     assert.equal(res.status, 200, path);
     const html = await res.text();
@@ -42,6 +42,14 @@ test('robots, sitemap, favicon y 404', async () => {
   assert.match(robots, /Sitemap: https:\/\/docsure.app\/sitemap.xml/);
   const sitemap = await (await fetch(`${t.base}/sitemap.xml`)).text();
   assert.match(sitemap, /<loc>https:\/\/docsure.app\/precios<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/docsure.app\/soluciones\/inmobiliarias<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/docsure.app\/blog\/verificacion-en-dos-pasos<\/loc>/);
+  assert.equal((await fetch(`${t.base}/soluciones/no-existe`)).status, 404);
+  const ind = await (await fetch(`${t.base}/soluciones/salud`)).text();
+  assert.match(ind, /"@type":"FAQPage"/);
+  assert.match(ind, /"@type":"BreadcrumbList"/);
+  const pricing = await (await fetch(`${t.base}/precios`)).text();
+  assert.doesNotMatch(pricing, /Equipos con plantillas compartidas <span class="badge-soon">/, 'lo que ya existe no figura como Pronto');
   const fav = await fetch(`${t.base}/static/favicon.svg`);
   assert.equal(fav.status, 200);
   const og = await fetch(`${t.base}/static/og.png`);

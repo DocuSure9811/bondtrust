@@ -14,6 +14,7 @@ export function integrations(config, user) {
     ['Asistentes de IA', 'Claude, Cursor, Copilot y otros asistentes se conectan con un clic y hacen la integración por vos, sin copiar claves.', '/desarrolladores#ia', 'Conectar mi IA'],
     ['Zapier, Make y n8n', 'Conectá DocSure con miles de apps usando sus módulos de webhook y de solicitudes HTTP. Sin conectores nativos todavía.', '/desarrolladores#webhooks', 'Cómo hacerlo'],
     ['Plantillas y envío masivo', 'Guardá documentos con sus campos como plantilla y enviá cientos de sobres desde un CSV, también por API.', '/producto#plantillas', 'Ver plantillas'],
+    ['Excel y Google Sheets', 'Exportá tus sobres a CSV con estado, carpeta, firmas y destinatarios, listo para abrir en tu planilla.', '/producto#organizacion', 'Ver exportación'],
     ['OpenAPI 3.1', 'Generá clientes en cualquier lenguaje e importá la especificación en Postman o Insomnia.', '/openapi.json', 'Descargar especificación'],
   ];
   const body = `${hero('Integraciones', 'DocSure se conecta con tus sistemas por API, webhooks o directamente desde tu asistente de IA.')}
@@ -59,6 +60,9 @@ export function compareDocusign(config, user) {
     ['Código de acceso anti-phishing', 'El firmante puede entrar en docsure.app/acceder y escribir su código, sin tocar enlaces del email.'],
     ['Verificador público del sello', 'Cualquiera puede comprobar que un documento firmado no fue alterado.'],
     ['Recordatorios y vencimientos configurables', 'Elegí cada cuántos días recordar y extendé el vencimiento con un clic.'],
+    ['Campos condicionales y adjuntos desde el plan Gratis', 'Formularios inteligentes y documentación del firmante sin pagar un plan avanzado.'],
+    ['Equipos con plantillas compartidas', 'Invitá a tu equipo con un enlace; los administradores ven todos los sobres.'],
+    ['Exportación CSV y carpetas', 'Ordená y exportá tus sobres para auditoría o control, en todos los planes.'],
   ];
   const body = `${hero('DocSure vs. DocuSign', 'Todo lo que necesitás de una plataforma de firma electrónica, por menos.', '<a class="btn btn-primary btn-lg" href="/registro">Probar DocSure gratis</a>')}
 <section class="section section-tight"><div class="wrap narrow">
@@ -107,6 +111,37 @@ export const POSTS = {
 <h2>Firmar sin tocar enlaces</h2><p>Cada invitación de DocSure incluye un <strong>código de acceso</strong>. Si dudás del email, abrí vos mismo <a href="/acceder">docsure.app/acceder</a>, escribí el código y llegás al mismo documento sin hacer clic en nada.</p>
 <h2>Siempre con verificación</h2><p>Aun con el enlace correcto, nadie puede firmar en tu nombre: DocSure pide un código de verificación que llega a tu email antes de mostrarte el documento. Y nunca te vamos a pedir tu contraseña.</p>`,
   },
+  'como-firmar-un-contrato-de-alquiler-online': {
+    title: 'Cómo firmar un contrato de alquiler online, paso a paso',
+    description: 'Guía para firmar contratos de alquiler a distancia con inquilinos, garantes y propietarios: documentos, orden de firma, adjuntos y validez.',
+    date: '2026-11-10',
+    html: `<p>Firmar un alquiler ya no requiere juntar a inquilino, garantes y propietario en la misma oficina. Con una plataforma de firma electrónica, cada uno firma desde su celular y el contrato queda sellado con toda la evidencia.</p>
+<h2>1. Prepará los documentos</h2><p>Subí el contrato y, si corresponde, el inventario y el reglamento. En DocSure podés subir <strong>varios PDF en un mismo sobre</strong>: cada persona firma una sola vez y las páginas indican a qué documento pertenecen.</p>
+<h2>2. Agregá a los firmantes</h2><p>Inquilino, garantes y propietario. Si necesitás que firmen en un orden (por ejemplo, el propietario al final), activá la firma en orden.</p>
+<h2>3. Pedí la documentación al firmar</h2><p>Con un campo de <strong>adjunto</strong>, cada garante sube su recibo de sueldo o escritura desde el celular. Con <strong>campos condicionales</strong>, preguntas como "¿Tiene mascota?" muestran la cláusula correspondiente solo si la respuesta es sí.</p>
+<h2>4. Enviá y seguí el estado</h2><p>Cada firmante recibe un enlace personal y un código de acceso. Activá recordatorios automáticos y, si algo cambia, corregí el sobre sin consumir tu cupo.</p>
+<h2>¿Es válido?</h2><p>En Argentina la Ley 25.506 reconoce la firma electrónica y el Código Civil y Comercial admite la contratación por medios electrónicos. El certificado de finalización de DocSure registra quién firmó, cómo verificó su identidad y desde dónde. Ante dudas sobre tu caso, consultá a tu asesor legal. Más ideas en <a href="/soluciones/inmobiliarias">DocSure para inmobiliarias</a>.</p>`,
+  },
+  'firma-electronica-para-recursos-humanos': {
+    title: 'Firma electrónica en RR. HH.: altas y contratos sin papel',
+    description: 'Cómo digitalizar el ingreso de personal: contratos, confidencialidad, políticas internas y documentación del empleado firmados a distancia.',
+    date: '2026-11-10',
+    html: `<p>El ingreso de una persona suele implicar varios documentos y varias idas y vueltas. Con firma electrónica, todo se resuelve en un solo envío.</p>
+<h2>Un sobre para todo el ingreso</h2><p>Contrato, acuerdo de confidencialidad y política de uso de equipos en un mismo sobre. La persona revisa todo junto y firma una vez.</p>
+<h2>Datos correctos desde el principio</h2><p>Usá campos con formato para el CUIL, el teléfono o el email, y listas desplegables para la obra social o el talle de ropa. Los campos condicionales muestran preguntas extra solo cuando hacen falta.</p>
+<h2>Documentación adjunta</h2><p>Con un campo de adjunto, el empleado sube la foto del DNI o la constancia de CBU al firmar. El archivo queda anexado al PDF final y su huella figura en el certificado.</p>
+<h2>Políticas para toda la empresa</h2><p>Guardá la política como plantilla y usá el <strong>envío masivo</strong> con un CSV: cada persona recibe su propio sobre y ves el resultado fila por fila.</p>
+<h2>Orden y control</h2><p>Organizá los sobres en carpetas por área o por año, buscá por nombre y exportá a CSV. Si trabajás en equipo, los administradores ven los sobres de todos. Más en <a href="/soluciones/recursos-humanos">DocSure para Recursos Humanos</a>.</p>`,
+  },
+  'verificacion-en-dos-pasos': {
+    title: 'Verificación en dos pasos: por qué activarla hoy',
+    description: 'Qué es la verificación en dos pasos, cómo protege tu cuenta de firma electrónica y cómo activarla en DocSure con cualquier app autenticadora.',
+    date: '2026-11-10',
+    html: `<p>Tu cuenta de firma electrónica guarda contratos, datos de clientes y la posibilidad de enviar documentos en nombre de tu empresa. Una contraseña filtrada alcanza para ponerla en riesgo.</p>
+<h2>Qué es</h2><p>La verificación en dos pasos agrega un segundo requisito al ingresar: un código de 6 dígitos que genera una app en tu celular y cambia cada 30 segundos. Aunque alguien conozca tu contraseña, sin tu celular no entra.</p>
+<h2>Cómo activarla en DocSure</h2><ol><li>Entrá en Ajustes y tocá <strong>Activar verificación en dos pasos</strong>.</li><li>Escaneá el código QR con Google Authenticator, Microsoft Authenticator, 1Password u otra app compatible.</li><li>Escribí el código que muestra la app para confirmar.</li><li>Guardá los 10 códigos de recuperación en un lugar seguro: cada uno sirve una vez si perdés el celular.</li></ol>
+<h2>Además</h2><p>En Ajustes ves tus sesiones abiertas (navegador, IP y última actividad) y podés cerrarlas a distancia, y el registro de actividad muestra ingresos, intentos fallidos y cambios de contraseña. Más en el <a href="/seguridad">Centro de confianza</a>.</p>`,
+  },
 };
 
 export const CONTENT_PATHS = ['/integraciones', '/tipos-de-firma', '/comparar/docusign', '/blog', ...Object.keys(POSTS).map((s) => `/blog/${s}`)];
@@ -122,7 +157,7 @@ ${Object.entries(POSTS).map(([slug, p]) => `<article class="solution"><h2><a hre
 export function blogPost(config, user, slug) {
   const p = POSTS[slug];
   if (!p) return null;
-  const body = `<article><section class="page-hero"><div class="wrap narrow"><p class="eyebrow"><a href="/blog">Blog</a></p><h1>${p.title}</h1><p class="muted"><time datetime="${p.date}">10 de noviembre de 2026</time></p></div></section>
+  const body = `<article><section class="page-hero"><div class="wrap narrow"><p class="eyebrow"><a href="/blog">Blog</a></p><h1>${p.title}</h1><p class="muted"><time datetime="${p.date}">${new Date(`${p.date}T12:00:00Z`).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}</time></p></div></section>
 <section class="section section-tight"><div class="wrap narrow prose">${p.html}
 <p><a class="btn btn-primary" href="/registro">Probar DocSure gratis</a></p></div></section></article>`;
   return page({

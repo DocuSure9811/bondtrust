@@ -7,7 +7,7 @@ export const PLANS_VIEW = [
   {
     key: 'gratis', name: 'Gratis', monthly: 0, annual: 0, unit: 'para siempre',
     pitch: 'Para empezar a firmar hoy, sin tarjeta.',
-    features: ['5 sobres por mes', 'Firmantes ilimitados por sobre', 'Verificación por código y código de acceso anti-phishing', 'Sello digital X.509 y certificado de finalización', 'Plantillas, recordatorios y vencimientos', 'API REST, webhooks y conexión con IA', 'Los sobres corregidos o anulados no consumen cupo'],
+    features: ['5 sobres por mes', 'Firmantes ilimitados por sobre', 'Verificación por código y código de acceso anti-phishing', 'Sello digital X.509 y certificado de finalización', 'Varios documentos por sobre', 'Campos condicionales, listas y adjuntos', 'Plantillas, recordatorios y vencimientos', 'API REST, webhooks y conexión con IA', 'Los sobres corregidos o anulados no consumen cupo'],
   },
   {
     key: 'personal', name: 'Personal', monthly: 9, annual: 7, unit: 'por mes',
@@ -17,12 +17,12 @@ export const PLANS_VIEW = [
   {
     key: 'profesional', name: 'Profesional', monthly: 19, annual: 15, unit: 'por usuario / mes', popular: true,
     pitch: 'Para equipos que firman todos los días.',
-    features: ['Sobres ilimitados', 'Todo lo del plan Personal', 'Envío masivo de hasta 200 sobres por vez', `Campos condicionales y fórmulas ${soon}`, `20 SMS de verificación por mes ${soon}`, `Equipos con plantillas compartidas ${soon}`],
+    features: ['Sobres ilimitados', 'Todo lo del plan Personal', 'Envío masivo de hasta 200 sobres por vez', 'Equipos con plantillas compartidas', 'Carpetas, búsqueda y exportación CSV', `20 SMS de verificación por mes ${soon}`],
   },
   {
     key: 'empresa', name: 'Empresa', monthly: 36, annual: 29, unit: 'por usuario / mes',
     pitch: 'Para automatizar e integrar.',
-    features: ['Todo lo del plan Profesional', `Inicio de sesión único (SSO) ${soon}`, `Roles y permisos por equipo ${soon}`, `Firma electrónica avanzada (AES) ${soon}`, 'Soporte prioritario'],
+    features: ['Todo lo del plan Profesional', 'Roles de administrador y miembro', 'Vista de los sobres de todo el equipo', `Inicio de sesión único (SSO) ${soon}`, `Firma electrónica avanzada (AES) ${soon}`, 'Soporte prioritario'],
   },
 ];
 
@@ -187,10 +187,16 @@ export function pricing(config, user) {
     ['Firma en español, inglés y portugués', check, check, check, check],
     ['Marca propia (logo y color)', check, check, check, check],
     ['Envío masivo desde CSV', check, check, check, check],
+    ['Varios documentos por sobre', check, check, check, check],
+    ['Campos condicionales, listas y validaciones', check, check, check, check],
+    ['Adjuntos del firmante (DNI, comprobantes)', check, check, check, check],
+    ['Contactos, carpetas, búsqueda y exportación CSV', check, check, check, check],
+    ['Equipos con roles y plantillas compartidas', check, check, check, check],
+    ['Verificación en dos pasos y control de sesiones', check, check, check, check],
     ['SMS de verificación', '—', '—', `20 / mes ${soon}`, `50 / mes ${soon}`],
     ['API REST y webhooks firmados', check, check, check, check],
     ['Conexión con asistentes de IA (Claude, Cursor…)', check, check, check, check],
-    ['SSO y roles', '—', '—', '—', soon],
+    ['Inicio de sesión único (SSO)', '—', '—', '—', soon],
   ];
   const body = `
 <section class="page-hero"><div class="wrap narrow center">
@@ -224,13 +230,18 @@ ${faqSection()}`;
 
 export function product(config, user) {
   const blocks = [
-    ['firma', 'Firma electrónica', 'Tus firmantes reciben un email con un enlace personal. Lo abren en cualquier navegador, confirman su identidad y firman dibujando con el dedo, el mouse o escribiendo su nombre. Pueden rechazar indicando el motivo, y vos te enterás al instante.', ['Firma dibujada o escrita', 'Iniciales, fecha, nombre, email, texto y casillas', 'Pensado primero para el celular', 'Rechazo con motivo']],
+    ['firma', 'Firma electrónica', 'Tus firmantes reciben un email con un enlace personal. Lo abren en cualquier navegador, confirman su identidad y firman dibujando con el dedo, el mouse o escribiendo su nombre. Pueden rechazar indicando el motivo, y vos te enterás al instante.', ['Firma dibujada o escrita', 'Iniciales, fecha, nombre, email, texto, casillas y listas', 'Pensado primero para el celular', 'Rechazo con motivo']],
+    ['documentos', 'Varios documentos en un sobre', 'Subí el contrato, el anexo y la política juntos: se unen en un solo sobre y cada persona firma una sola vez. Agregá o quitá documentos mientras preparás el envío.', ['Hasta 10 PDF por sobre', 'Cada página indica a qué documento pertenece', 'Huella SHA-256 de cada archivo en el certificado', 'También por API con un solo llamado']],
+    ['campos', 'Campos inteligentes', 'Pedí exactamente lo que necesitás: listas desplegables, textos con formato controlado y adjuntos. Con los campos condicionales, cada pregunta aparece solo cuando corresponde.', ['Listas desplegables y casillas', 'Formato de email, número, documento o teléfono', 'Campos que aparecen según otra respuesta', 'Adjuntos del firmante anexados al PDF final']],
     ['preparacion', 'Preparación de documentos', 'Subí un PDF, agregá a los firmantes y arrastrá los campos sobre cada página. Cada firmante tiene un color, así ves de un vistazo quién completa qué.', ['Editor visual página por página', 'Campos obligatorios u opcionales', 'Firma en paralelo o en orden', 'Destinatarios que solo reciben copia']],
     ['sello', 'Sello digital y auditoría', 'Cuando firma el último, DocSure estampa las firmas en el PDF, agrega un certificado de finalización con todo el registro y sella el archivo con un certificado X.509. Si alguien cambia un byte, el sello deja de ser válido.', ['Huella SHA-256 del original y del final', 'IP, navegador y hora de cada acción', 'Sello criptográfico PKCS#7', 'Verificador público en docsure.app/verificar']],
     ['plantillas', 'Plantillas y envío masivo', 'Guardá cualquier documento con sus campos como plantilla. Usala para un envío puntual o mandá cientos de sobres desde un CSV, también por API.', ['Plantillas con roles y campos', 'Envío masivo de hasta 200 sobres por vez', 'Resultado por fila: enviado o con error', 'Disponible en el panel y en la API']],
     ['recordatorios', 'Recordatorios, vencimientos y correcciones', 'Elegí cada cuántos días recordar a quien no firmó y cuándo vence el sobre. Si te equivocaste, corregí el sobre en un clic: los anulados y corregidos no consumen tu cupo.', ['Recordatorios cada 1, 2, 3, 5 o 7 días', 'Vencimiento de 1 a 120 días, extensible', 'Corregir crea un borrador idéntico para editar', 'Aviso por email y webhook al vencer']],
     ['seguridad-firmante', 'Firma segura y sin phishing', 'Cada invitación trae un código de acceso: quien desconfía del email entra en docsure.app/acceder y lo escribe, sin tocar enlaces. También podés hacer firmar en persona en tu propio dispositivo.', ['Código de acceso en cada invitación', 'Verificación por código de un solo uso', 'Firma en persona atestiguada por el remitente', 'Firma en español, inglés y portugués']],
     ['marca', 'Tu marca en cada firma', 'Subí tu logo y elegí tu color: tus firmantes ven tu marca en los emails y en la pantalla de firma, para que reconozcan que el documento viene de vos.', ['Logo en emails y en la firma', 'Color de marca', 'Nombre de tu empresa como remitente', 'Sin costo extra']],
+    ['equipos', 'Equipos y roles', 'Invitá a tu equipo con un enlace. Todos usan las mismas plantillas aprobadas y los administradores ven los sobres de todos, en solo lectura.', ['Administradores y miembros', 'Plantillas compartidas', 'Vista de los sobres del equipo', 'Cada persona conserva sus sobres si sale del equipo']],
+    ['organizacion', 'Contactos, carpetas y búsqueda', 'Cada destinatario queda en tu libreta y se sugiere al escribir. Ordená los sobres en carpetas, buscá por documento o persona, filtrá por fecha y exportá a CSV.', ['Libreta de contactos automática', 'Carpetas y selección múltiple', 'Búsqueda por título, nombre o email', 'Exportación CSV lista para Excel']],
+    ['cuenta', 'Tu cuenta, protegida', 'Activá la verificación en dos pasos con cualquier app autenticadora, revisá dónde tenés la sesión abierta y cerrala a distancia.', ['Verificación en dos pasos (TOTP)', 'Códigos de recuperación', 'Sesiones abiertas y cierre remoto', 'Registro de actividad de la cuenta']],
     ['seguimiento', 'Seguimiento en tiempo real', 'Desde tu panel ves cada sobre: quién lo abrió, quién verificó su identidad y quién firmó. Podés reenviar el enlace o anular el sobre cuando quieras.', ['Estados por firmante', 'Historial completo', 'Reenvío seguro: el enlace anterior deja de funcionar', 'Descarga del original y del final']],
   ];
   const body = `
@@ -251,7 +262,7 @@ ${blocks
   <h2 class="section-title">Lo que viene</h2>
   <p class="section-lead">Funciones en desarrollo, incluidas en los planes cuando se lancen.</p>
   <ul class="roadmap">
-    <li>Equipos con roles y plantillas compartidas ${soon}</li><li>Campos condicionales y fórmulas ${soon}</li>
+    <li>Fórmulas y cálculos en campos ${soon}</li>
     <li>Verificación por SMS y WhatsApp ${soon}</li>
     <li>Firma electrónica avanzada (AES) ${soon}</li><li>Inicio de sesión único (SSO) ${soon}</li>
   </ul>
@@ -259,7 +270,7 @@ ${blocks
   return page({
     config, user, path: '/producto',
     title: 'Funcionalidades de firma electrónica',
-    description: 'Editor de campos sobre PDF, plantillas, envío masivo, recordatorios, firma en persona, código anti-phishing, sello digital X.509 y verificador público.',
+    description: 'Varios documentos por sobre, campos condicionales, adjuntos, plantillas, equipos, envío masivo, recordatorios, sello digital X.509 y verificador público.',
     body,
   });
 }
@@ -267,11 +278,11 @@ ${blocks
 export function solutions(config, user) {
   const items = [
     ['ventas', 'Ventas', 'Mandá la propuesta y el contrato en el mismo momento. Tu cliente firma desde el celular y vos cerrás el acuerdo el mismo día.'],
-    ['rrhh', 'Recursos Humanos', 'Contratos laborales, confidencialidad y políticas internas firmados a distancia, con registro de quién aceptó qué y cuándo.'],
+    ['recursos-humanos', 'Recursos Humanos', 'Contratos laborales, confidencialidad y políticas internas firmados a distancia, con registro de quién aceptó qué y cuándo.'],
     ['legal', 'Legal', 'Trazabilidad completa, sello criptográfico y certificado de finalización para cada acuerdo. Evidencia lista para presentar.'],
     ['compras', 'Compras', 'Órdenes de compra y contratos con proveedores firmados en orden: primero el proveedor, después quien aprueba.'],
-    ['inmobiliario', 'Inmobiliario', 'Reservas, boletos y contratos de alquiler firmados por propietarios e inquilinos sin coordinar encuentros.'],
-    ['financiero', 'Servicios financieros', 'Altas de clientes, mandatos y declaraciones con identidad verificada y documentación inalterable.'],
+    ['inmobiliarias', 'Inmobiliario', 'Reservas, boletos y contratos de alquiler firmados por propietarios e inquilinos sin coordinar encuentros.'],
+    ['servicios-financieros', 'Servicios financieros', 'Altas de clientes, mandatos y declaraciones con identidad verificada y documentación inalterable.'],
     ['salud', 'Salud', 'Consentimientos informados firmados antes de la consulta, con copia automática para el paciente.'],
     ['educacion', 'Educación', 'Inscripciones, autorizaciones de salidas y acuerdos con docentes firmados por familias desde el celular.'],
   ];
@@ -281,7 +292,7 @@ export function solutions(config, user) {
   <p class="lead">DocSure se adapta a cada área y sector que necesita acuerdos rápidos y con respaldo.</p>
 </div></section>
 <section class="section section-tight"><div class="wrap solutions-grid">
-${items.map(([id, t, d]) => `<article class="solution" id="${id}"><h2>${t}</h2><p>${d}</p><a class="link-strong" href="/registro">Empezar gratis →</a></article>`).join('')}
+${items.map(([id, t, d]) => `<article class="solution" id="${id}"><h2><a href="/soluciones/${id}">${t}</a></h2><p>${d}</p><a class="link-strong" href="/soluciones/${id}">Ver cómo se usa →</a></article>`).join('')}
 </div></section>`;
   return page({
     config, user, path: '/soluciones',
@@ -301,6 +312,8 @@ export function security(config, user) {
     ['Registro de auditoría', 'Cada evento queda registrado con fecha, IP y navegador, y se incluye en el certificado de finalización.'],
     ['Contraseñas protegidas', 'Las contraseñas se guardan con scrypt y sal única. Los enlaces y códigos se guardan solo como HMAC.'],
     ['Protección contra abuso', 'Límites de intentos en el ingreso, en los códigos y en el verificador, y cabeceras de seguridad estrictas (CSP).'],
+    ['Verificación en dos pasos', 'Protegé tu cuenta con una app autenticadora (TOTP). El secreto se guarda cifrado y cada código sirve una sola vez.'],
+    ['Sesiones y actividad', 'Mirá dónde tenés la sesión abierta, cerrala a distancia y revisá el registro de ingresos, intentos fallidos y cambios.'],
   ];
   const body = `
 <section class="page-hero"><div class="wrap narrow center">

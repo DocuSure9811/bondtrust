@@ -37,19 +37,19 @@ const NAV = [
       {
         title: 'Por área',
         items: [
-          ['/soluciones#ventas', 'Ventas', 'Cerrá acuerdos el mismo día'],
-          ['/soluciones#rrhh', 'Recursos Humanos', 'Contratos y altas sin papel'],
-          ['/soluciones#legal', 'Legal', 'Control total y trazabilidad'],
-          ['/soluciones#compras', 'Compras', 'Proveedores firmando en minutos'],
+          ['/soluciones/ventas', 'Ventas', 'Cerrá acuerdos el mismo día'],
+          ['/soluciones/recursos-humanos', 'Recursos Humanos', 'Contratos y altas sin papel'],
+          ['/soluciones/legal', 'Legal', 'Control total y trazabilidad'],
+          ['/soluciones/compras', 'Compras', 'Proveedores firmando en minutos'],
         ],
       },
       {
         title: 'Por sector',
         items: [
-          ['/soluciones#inmobiliario', 'Inmobiliario', 'Alquileres y reservas a distancia'],
-          ['/soluciones#financiero', 'Servicios financieros', 'Altas de clientes con evidencia'],
-          ['/soluciones#salud', 'Salud', 'Consentimientos informados'],
-          ['/soluciones#educacion', 'Educación', 'Inscripciones y autorizaciones'],
+          ['/soluciones/inmobiliarias', 'Inmobiliario', 'Alquileres y reservas a distancia'],
+          ['/soluciones/servicios-financieros', 'Servicios financieros', 'Altas de clientes con evidencia'],
+          ['/soluciones/salud', 'Salud', 'Consentimientos informados'],
+          ['/soluciones/educacion', 'Educación', 'Inscripciones y autorizaciones'],
         ],
       },
     ],
@@ -108,8 +108,8 @@ export function footer() {
       <li><a href="/producto">Funcionalidades</a></li><li><a href="/precios">Precios</a></li>
       <li><a href="/verificar">Verificar un documento</a></li><li><a href="/desarrolladores">API para desarrolladores</a></li><li><a href="/integraciones">Integraciones</a></li><li><a href="/comparar/docusign">DocSure vs. DocuSign</a></li><li><a href="/registro">Crear cuenta gratis</a></li></ul></div>
     <div><p class="footer-title">Soluciones</p><ul>
-      <li><a href="/soluciones#ventas">Ventas</a></li><li><a href="/soluciones#rrhh">Recursos Humanos</a></li>
-      <li><a href="/soluciones#legal">Legal</a></li><li><a href="/soluciones#inmobiliario">Inmobiliario</a></li></ul></div>
+      <li><a href="/soluciones/ventas">Ventas</a></li><li><a href="/soluciones/recursos-humanos">Recursos Humanos</a></li>
+      <li><a href="/soluciones/legal">Legal</a></li><li><a href="/soluciones/inmobiliarias">Inmobiliario</a></li><li><a href="/soluciones/salud">Salud</a></li><li><a href="/soluciones/educacion">Educación</a></li></ul></div>
     <div><p class="footer-title">Confianza</p><ul>
       <li><a href="/seguridad">Centro de confianza</a></li><li><a href="/validez-legal">Validez legal</a></li>
       <li><a href="/precios#preguntas">Preguntas frecuentes</a></li><li><a href="/tipos-de-firma">Tipos de firma</a></li><li><a href="/blog">Blog</a></li><li><a href="/acceder">Firmar con código de acceso</a></li></ul></div>

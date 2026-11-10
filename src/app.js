@@ -19,6 +19,7 @@ import * as templatesSvc from './services/templates.js';
 import * as webhooks from './services/webhooks.js';
 import * as content from './web/content.js';
 import * as devdocs from './web/devdocs.js';
+import * as industries from './web/industries.js';
 import { HttpError, cleanEmail, cleanPassword, cleanText } from './validate.js';
 import * as views from './web/app-views.js';
 import * as marketing from './web/marketing.js';
@@ -154,7 +155,7 @@ export function createApp({ pool, config, mailer }) {
   });
 
   app.get('/sitemap.xml', (req, res) => {
-    const urls = [...marketing.SITEMAP_PATHS, ...content.CONTENT_PATHS].map((p) => `<url><loc>${config.siteUrl}${p}</loc><changefreq>weekly</changefreq><priority>${p === '/' ? '1.0' : '0.7'}</priority></url>`).join('');
+    const urls = [...marketing.SITEMAP_PATHS, ...industries.INDUSTRY_PATHS, ...content.CONTENT_PATHS].map((p) => `<url><loc>${config.siteUrl}${p}</loc><changefreq>weekly</changefreq><priority>${p === '/' ? '1.0' : '0.7'}</priority></url>`).join('');
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
   });
 
@@ -166,6 +167,10 @@ export function createApp({ pool, config, mailer }) {
   app.get('/producto', (req, res) => html(res, marketing.product(config, req.user)));
   app.get('/precios', (req, res) => html(res, marketing.pricing(config, req.user)));
   app.get('/soluciones', (req, res) => html(res, marketing.solutions(config, req.user)));
+  app.get('/soluciones/:slug', (req, res, next) => {
+    const out = industries.industryPage(config, req.user, req.params.slug);
+    return out ? html(res, out) : next();
+  });
   app.get('/seguridad', (req, res) => html(res, marketing.security(config, req.user)));
   app.get('/verificar', (req, res) => html(res, marketing.verifyPage(config, req.user)));
   app.get('/validez-legal', (req, res) => html(res, marketing.legalValidity(config, req.user)));
