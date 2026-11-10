@@ -16,7 +16,10 @@ test('contraseñas con scrypt', async () => {
 });
 
 test('páginas públicas con SEO completo', async () => {
-  for (const path of ['/', '/producto', '/precios', '/soluciones', '/seguridad', '/verificar', '/desarrolladores', '/integraciones', '/tipos-de-firma', '/comparar/docusign', '/blog', '/blog/que-es-la-firma-electronica', '/blog/firma-electronica-vs-firma-digital', '/blog/como-detectar-emails-de-firma-falsos', '/blog/como-firmar-un-contrato-de-alquiler-online', '/blog/firma-electronica-para-recursos-humanos', '/blog/verificacion-en-dos-pasos', '/soluciones/ventas', '/soluciones/recursos-humanos', '/soluciones/legal', '/soluciones/compras', '/soluciones/inmobiliarias', '/soluciones/servicios-financieros', '/soluciones/salud', '/soluciones/educacion', '/acceder', '/validez-legal', '/legal/terminos', '/legal/privacidad', '/legal/cookies', '/registro']) {
+  const sitemap = await (await fetch(`${t.base}/sitemap.xml`)).text();
+  const paths = [...sitemap.matchAll(/<loc>https:\/\/docsure\.app([^<]*)<\/loc>/g)].map((m) => m[1]);
+  assert.ok(paths.length > 40, `sitemap con ${paths.length} páginas`);
+  for (const path of [...paths, '/acceder']) {
     const res = await fetch(t.base + path);
     assert.equal(res.status, 200, path);
     const html = await res.text();

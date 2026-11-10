@@ -289,7 +289,7 @@ ${items.map(([id, t, d]) => `<article class="solution" id="${id}"><h2><a href="/
   return page({
     config, user, path: '/soluciones',
     title: 'Soluciones de firma electrónica por área y sector',
-    description: 'Firma electrónica para ventas, recursos humanos, legal, compras, experiencia del cliente, inmobiliarias, finanzas, seguros, salud, ciencias de la vida, educación, PyMEs y grandes empresas.',
+    description: 'Firma electrónica por área, sector y tamaño: ventas, RR. HH., legal, compras, seguros, salud, finanzas, inmobiliarias, educación, PyMEs y grandes empresas.',
     body,
   });
 }

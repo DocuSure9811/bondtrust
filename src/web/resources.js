@@ -211,7 +211,7 @@ export function helpArticle(config, user, slug) {
 ${related.length ? `<h2>Artículos relacionados</h2><ul>${related.map(([s, , t]) => `<li><a href="/ayuda/${s}">${t}</a></li>`).join('')}</ul>` : ''}
 <p><a class="btn btn-primary" href="/registro">Probar DocSure gratis</a></p></div></section></article>`;
   return page({
-    config, user, path: `/ayuda/${slug}`, title, description: summary, body,
+    config, user, path: `/ayuda/${slug}`, title, description: `${summary} Guía paso a paso del centro de ayuda de DocSure.`, body,
     jsonLd: [{ '@context': 'https://schema.org', '@type': 'BreadcrumbList', itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Centro de ayuda', item: `${config.siteUrl}/ayuda` },
       { '@type': 'ListItem', position: 2, name: title, item: `${config.siteUrl}/ayuda/${slug}` },
