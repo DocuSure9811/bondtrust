@@ -32,7 +32,7 @@ try {
     for (const t of ordered) {
       let copied = 0;
       for (let offset = 0; ; offset += 200) {
-        const { rows } = await source.query(`SELECT json_agg(x) AS rows FROM (SELECT * FROM "${t}" ORDER BY ctid LIMIT 200 OFFSET ${offset}) x`);
+        const { rows } = await source.query(`SELECT json_agg(copia_fila) AS rows FROM (SELECT * FROM "${t}" ORDER BY ctid LIMIT 200 OFFSET ${offset}) copia_fila`);
         if (!rows[0].rows) break;
         await client.query(`INSERT INTO "${t}" SELECT (jsonb_populate_record(NULL::"${t}", e)).* FROM jsonb_array_elements($1::jsonb) e`, [JSON.stringify(rows[0].rows)]);
         copied += rows[0].rows.length;
