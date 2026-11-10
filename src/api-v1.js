@@ -12,7 +12,7 @@ const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next
  */
 export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
   const router = express.Router();
-  const docs = `${ctx.config.siteUrl}/desarrolladores`;
+  const docs = `${ctx.config.appUrl}/desarrolladores`;
   router.use(express.json({ limit: '22mb' }));
 
   router.get('/', (req, res) => {
@@ -20,8 +20,8 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
       name: 'DocSure API',
       version: 'v1',
       docs,
-      llms_txt: `${ctx.config.siteUrl}/llms.txt`,
-      openapi: `${ctx.config.siteUrl}/openapi.json`,
+      llms_txt: `${ctx.config.appUrl}/llms.txt`,
+      openapi: `${ctx.config.appUrl}/openapi.json`,
       authentication: 'Authorization: Bearer <API_KEY>. Creá la clave en /app/api o con el flujo POST /api/v1/agent/connect.',
     });
   });

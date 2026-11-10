@@ -136,7 +136,7 @@ export function apiPage(config, user) {
   <section class="card api-hint">
     <h2>Integrá DocSure con tu asistente de IA</h2>
     <p>Pegale esto a Claude, Cursor o tu IDE y hace la integración completa por vos:</p>
-    <pre class="code" id="ai-prompt">Integrá DocSure en este proyecto para enviar documentos a firmar. Seguí las instrucciones de ${config.siteUrl}/llms.txt (API base: ${base}/api/v1). Conectate con el flujo de agente para obtener la clave sin que yo la copie.</pre>
+    <pre class="code" id="ai-prompt">Integrá DocSure en este proyecto para enviar documentos a firmar. Seguí las instrucciones de ${config.appUrl}/llms.txt (API base: ${base}/api/v1). Conectate con el flujo de agente para obtener la clave sin que yo la copie.</pre>
     <button class="btn btn-outline btn-sm" type="button" data-copy="ai-prompt">Copiar instrucción</button>
   </section>
   <section class="card">

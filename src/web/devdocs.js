@@ -168,8 +168,8 @@ export function llmsTxt(config) {
 > DocSure es una plataforma de firma electrónica (alternativa a DocuSign) con API REST: enviás un PDF, cada firmante recibe un email, confirma su identidad con un código y firma desde cualquier dispositivo. El PDF final queda sellado con un certificado X.509 y un certificado de finalización con auditoría.
 
 API base: ${api}
-Documentación: ${config.siteUrl}/desarrolladores
-OpenAPI: ${config.siteUrl}/openapi.json
+Documentación: ${config.appUrl}/desarrolladores
+OpenAPI: ${config.appUrl}/openapi.json
 Panel del usuario: ${config.appUrl}/app
 
 ## Instrucciones para asistentes de IA (Claude, Cursor, Copilot, etc.)
@@ -272,7 +272,7 @@ export function openapiSpec(config) {
     info: {
       title: 'DocSure API',
       version: '1.0.0',
-      description: `API de firma electrónica de DocSure. Guía completa: ${config.siteUrl}/desarrolladores. Instrucciones para asistentes de IA: ${config.siteUrl}/llms.txt`,
+      description: `API de firma electrónica de DocSure. Guía completa: ${config.appUrl}/desarrolladores. Instrucciones para asistentes de IA: ${config.appUrl}/llms.txt`,
     },
     servers: [{ url: `${config.appUrl}/api/v1` }],
     components: {
@@ -355,7 +355,7 @@ function code(text) {
 export function developersPage(config, user) {
   const api = `${config.appUrl}/api/v1`;
   const ex = examples(api);
-  const prompt = `Integrá DocSure en este proyecto para enviar documentos a firmar. Seguí las instrucciones de ${config.siteUrl}/llms.txt y conectate con el flujo de agente para obtener la clave.`;
+  const prompt = `Integrá DocSure en este proyecto para enviar documentos a firmar. Seguí las instrucciones de ${config.appUrl}/llms.txt y conectate con el flujo de agente para obtener la clave.`;
   const body = `
 <section class="page-hero"><div class="wrap narrow center">
   <h1>API de firma electrónica</h1>
@@ -439,6 +439,6 @@ export function developersPage(config, user) {
     title: 'API de firma electrónica para desarrolladores',
     description: 'API REST de DocSure: enviá documentos a firmar con una llamada, recibí webhooks firmados y conectá tu asistente de IA sin copiar claves.',
     body,
-    jsonLd: [{ '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'API de firma electrónica de DocSure', url: `${config.siteUrl}/desarrolladores`, inLanguage: 'es' }],
+    jsonLd: [{ '@context': 'https://schema.org', '@type': 'TechArticle', headline: 'API de firma electrónica de DocSure', url: `${config.appUrl}/desarrolladores`, inLanguage: 'es' }],
   });
 }
