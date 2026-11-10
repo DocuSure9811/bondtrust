@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { client, samplePdf, startTestApp } from './helpers.js';
+import { PDFDocument } from 'pdf-lib';
+import { PNG, client, codeFrom, linkFrom, outbox, samplePdf, startTestApp } from './helpers.js';
 
 let t;
 let owner;
@@ -74,4 +75,79 @@ test('contactos por API v1', async () => {
   const spec = await (await fetch(`${t.base}/openapi.json`)).json();
   assert.ok(spec.paths['/contacts'] && spec.paths['/contacts/{id}']);
   assert.match(await (await fetch(`${t.base}/llms.txt`)).text(), /\/contacts/);
+});
+
+async function signWith(signer, token, email) {
+  assert.equal((await signer(`/api/firmar/${token}/codigo`, { method: 'POST' })).status, 200);
+  const code = codeFrom((await outbox(t.pool, 'otp', email)).at(-1));
+  const { session } = await (await signer(`/api/firmar/${token}/verificar`, { method: 'POST', body: { code } })).json();
+  return { session, res: await signer(`/api/firmar/${token}/firmar`, { method: 'POST', headers: { 'x-sign-session': session }, body: { signature: PNG, consent: true } }) };
+}
+
+test('varios documentos: agregar, quitar (corre los campos), firmar y certificado', async () => {
+  const pdf = await samplePdf();
+  const created = await (await owner('/api/sobres?title=Paquete&name=Contrato.pdf', { method: 'POST', body: pdf })).json();
+  assert.deepEqual(created.documents.map((d) => d.name), ['Contrato']);
+  const id = created.id;
+  let res = await owner(`/api/sobres/${id}/documentos?name=Anexo%20A`, { method: 'POST', body: pdf });
+  assert.equal(res.status, 201);
+  res = await owner(`/api/sobres/${id}/documentos?name=Anexo%20B`, { method: 'POST', body: pdf });
+  const added = await res.json();
+  assert.equal(added.pageCount, 6);
+  assert.deepEqual(added.documents.map((d) => [d.name, d.pages]), [['Contrato', 2], ['Anexo A', 2], ['Anexo B', 2]]);
+  assert.equal((await owner(`/api/sobres/${id}/documentos?name=x`, { method: 'POST', body: Buffer.from('%PDF-roto') })).status, 400);
+
+  const sig = (page) => ({ recipientKey: 's', type: 'signature', page, x: 0.1, y: 0.1, w: 0.3, h: 0.06 });
+  assert.equal((await owner(`/api/sobres/${id}`, { method: 'PUT', body: { title: 'Paquete', recipients: [{ key: 's', name: 'Doc Firmante', email: 'docs@example.com' }], fields: [sig(1), sig(3), sig(4), sig(6)] } })).status, 200);
+  // Quitar "Anexo A" (páginas 3-4): se borran sus campos y el de la página 6 pasa a la 4.
+  const removed = await (await owner(`/api/sobres/${id}/documentos/1`, { method: 'DELETE' })).json();
+  assert.deepEqual(removed.removed, { start: 3, count: 2 });
+  const detail = await (await owner(`/api/sobres/${id}`)).json();
+  assert.equal(detail.envelope.page_count, 4);
+  assert.deepEqual(detail.fields.map((f) => f.page).sort(), [1, 4]);
+  assert.deepEqual(detail.envelope.documents.map((d) => d.name), ['Contrato', 'Anexo B']);
+  const original = Buffer.from(await (await owner(`/api/sobres/${id}/original.pdf`)).arrayBuffer());
+  assert.equal((await PDFDocument.load(original)).getPageCount(), 4);
+  assert.equal((await owner(`/api/sobres/${id}/documentos/5`, { method: 'DELETE' })).status, 404);
+
+  assert.equal((await owner(`/api/sobres/${id}/enviar`, { method: 'POST', headers: { 'idempotency-key': `docs-${id}` } })).status, 200);
+  assert.equal((await owner(`/api/sobres/${id}/documentos?name=tarde`, { method: 'POST', body: pdf })).status, 409, 'no se agregan documentos a un sobre enviado');
+  assert.equal((await owner(`/api/sobres/${id}/documentos/0`, { method: 'DELETE' })).status, 409);
+
+  const signer = client(t.base);
+  const token = linkFrom((await outbox(t.pool, 'invite', 'docs@example.com'))[0]);
+  const { session, res: signed } = await signWith(signer, token, 'docs@example.com');
+  assert.equal(signed.status, 200);
+  assert.ok(session);
+  const { rows: [env] } = await t.pool.query('SELECT status, final_pdf FROM envelopes WHERE id = $1', [id]);
+  assert.equal(env.status, 'completed');
+  const final = await PDFDocument.load(env.final_pdf);
+  assert.ok(final.getPageCount() >= 5, '4 páginas + certificado');
+});
+
+test('varios documentos: un solo documento no se puede quitar; límites', async () => {
+  const pdf = await samplePdf();
+  const { id } = await (await owner('/api/sobres?title=Uno', { method: 'POST', body: pdf })).json();
+  assert.equal((await owner(`/api/sobres/${id}/documentos/0`, { method: 'DELETE' })).status, 400);
+  for (let i = 0; i < 9; i += 1) assert.equal((await owner(`/api/sobres/${id}/documentos?name=d${i}`, { method: 'POST', body: pdf })).status, 201);
+  assert.equal((await owner(`/api/sobres/${id}/documentos?name=once`, { method: 'POST', body: pdf })).status, 400, 'máximo 10');
+});
+
+test('varios documentos por API v1', async () => {
+  const { key } = await (await owner('/api/claves', { method: 'POST', body: { name: 'docs' } })).json();
+  const b64 = (await samplePdf()).toString('base64');
+  const res = await fetch(`${t.base}/api/v1/envelopes`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'API docs', documents: [{ name: 'Uno', document_base64: b64 }, { name: 'Dos', document_base64: b64 }], recipients: [{ name: 'Api Docs', email: 'apidocs@example.com' }] }),
+  });
+  assert.equal(res.status, 201, await res.clone().text());
+  const body = await res.json();
+  assert.equal(body.page_count, 4);
+  assert.deepEqual(body.documents.map((d) => d.name), ['Uno', 'Dos']);
+  const token = linkFrom((await outbox(t.pool, 'invite', 'apidocs@example.com'))[0]);
+  const signer = client(t.base);
+  const { rows: [f] } = await t.pool.query(`SELECT page FROM fields f JOIN recipients r ON r.id = f.recipient_id WHERE r.email = 'apidocs@example.com' AND f.type = 'signature'`);
+  assert.equal(f.page, 4, 'la firma automática va en la última página del último documento');
+  assert.equal((await signer(`/api/firmar/${token}/campos`, { headers: { 'x-sign-session': 'x' } })).status, 401, 'sin sesión no hay campos');
 });

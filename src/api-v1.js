@@ -15,7 +15,7 @@ const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next
 export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
   const router = express.Router();
   const docs = `${ctx.config.appUrl}/desarrolladores`;
-  router.use(express.json({ limit: '22mb' }));
+  router.use(express.json({ limit: '36mb' }));
 
   router.get('/', (req, res) => {
     res.json({
@@ -87,6 +87,11 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
     const version = req.query.version === 'original' ? 'original' : 'final';
     const doc = await env.ownerPdf(ctx, req.apiUser.id, req.params.id, version);
     sendPdf(res, doc.pdf, version === 'final' ? `${doc.title} - firmado` : doc.title);
+  }));
+
+  router.post('/envelopes/:id/documents', asyncRoute(async (req, res) => {
+    await env.appendDocument(ctx, req.apiUser.id, req.params.id, { name: req.body?.name, pdf: env.decodePdf(req.body?.document_base64) });
+    res.status(201).json(await env.apiEnvelope(ctx, req.apiUser.id, req.params.id));
   }));
 
   router.post('/envelopes/:id/correct', asyncRoute(async (req, res) => {

@@ -74,11 +74,13 @@ export function editorPage(config, user) {
   <ol class="wizard" id="wizard"><li class="active">Documento</li><li>Destinatarios</li><li>Campos</li><li>Enviar</li></ol>
 
   <section class="step" data-step="1">
-    <h1>Subí el documento</h1>
-    <label>Nombre del documento<input id="title" maxlength="160" placeholder="Ej.: Contrato de servicios"></label>
-    <div class="dropzone" id="drop"><input id="file" type="file" accept="application/pdf" class="visually-hidden">
-      <label for="file" class="dropzone-label"><span class="ic ic-upload" aria-hidden="true"></span><strong>Elegí o arrastrá un PDF</strong><span>Hasta 15 MB</span></label></div>
+    <h1>Subí los documentos</h1>
+    <label>Nombre del sobre<input id="title" maxlength="160" placeholder="Ej.: Contrato de servicios"></label>
+    <ul class="rlist doc-list" id="docs" hidden></ul>
+    <div class="dropzone" id="drop"><input id="file" type="file" accept="application/pdf" multiple class="visually-hidden">
+      <label for="file" class="dropzone-label"><span class="ic ic-upload" aria-hidden="true"></span><strong id="drop-text">Elegí o arrastrá uno o varios PDF</strong><span>Hasta 15 MB cada uno · 10 documentos por sobre</span></label></div>
     <p class="form-error" role="alert" id="err1"></p>
+    <div class="step-actions" id="step1-actions" hidden><span></span><button class="btn btn-primary" type="button" data-go="2">Siguiente: destinatarios</button></div>
   </section>
 
   <section class="step" data-step="2" hidden>

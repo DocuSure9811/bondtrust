@@ -31,6 +31,23 @@ export async function inspectPdf(bytes) {
   return { pageCount };
 }
 
+export { MAX_PAGES };
+
+/**
+ * Arma un PDF nuevo con páginas de varios PDF, en orden.
+ * `parts`: [{ bytes, keep? }] donde `keep(i)` decide si se conserva la página i (base 0).
+ */
+export async function assemblePdf(parts) {
+  const out = await PDFDocument.create();
+  for (const { bytes, keep } of parts) {
+    const src = await PDFDocument.load(bytes, { updateMetadata: false });
+    const indices = src.getPageIndices().filter((i) => !keep || keep(i));
+    const copied = await out.copyPages(src, indices);
+    copied.forEach((p) => out.addPage(p));
+  }
+  return Buffer.from(await out.save());
+}
+
 /** Deja solo los caracteres que la fuente estándar puede codificar (WinAnsi). */
 function encodable(font, text) {
   let out = '';
@@ -126,6 +143,8 @@ const EVENT_LABELS = {
   in_person_started: 'Firma en persona iniciada por el remitente',
   in_person_verified: 'Identidad atestiguada en persona',
   corrected: 'Sobre corregido',
+  document_added: 'Documento agregado',
+  document_removed: 'Documento quitado',
   voided: 'Sobre anulado',
   completed: 'Sobre completado',
 };
@@ -193,6 +212,14 @@ async function addCertificate(pdf, { envelope, owner, recipients, events, siteUr
   w.text(`Remitente: ${owner.name} <${owner.email}>`, { color: MUTED });
   w.text(`Creado: ${fmt(envelope.created_at)} · Enviado: ${fmt(envelope.sent_at)} · Completado: ${fmt(envelope.completed_at)}`, { color: MUTED });
   w.text(`Documento original: ${envelope.page_count} página(s) · SHA-256 ${envelope.original_sha256}`, { color: MUTED, size: 8 });
+  const docs = envelope.documents || [];
+  if (docs.length > 1) {
+    let first = 1;
+    for (const [i, d] of docs.entries()) {
+      w.text(`Documento ${i + 1}: ${d.name} · páginas ${first}-${first + d.pages - 1} · SHA-256 del archivo subido ${d.sha256}`, { color: MUTED, size: 8 });
+      first += d.pages;
+    }
+  }
   w.gap(10);
   w.text('Firmantes y destinatarios', { size: 13, bold: true });
   w.rule();

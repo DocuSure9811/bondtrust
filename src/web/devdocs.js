@@ -150,6 +150,7 @@ const ENDPOINTS = [
   ['POST', '/envelopes', 'Crea un sobre con el PDF, los destinatarios y los campos, y lo envía.'],
   ['GET', '/envelopes', 'Lista los sobres. Filtro opcional ?status=draft|sent|completed|declined|voided.'],
   ['GET', '/envelopes/{id}', 'Estado del sobre, de cada destinatario y su historial.'],
+  ['POST', '/envelopes/{id}/documents', 'Agrega un PDF al final de un borrador: {"name", "document_base64"}.'],
   ['POST', '/envelopes/{id}/send', 'Envía un borrador (creado con "send": false).'],
   ['POST', '/envelopes/{id}/void', 'Anula un sobre en curso. Los anulados no consumen cupo.'],
   ['POST', '/envelopes/{id}/correct', 'Corrige: anula el sobre (si está en curso) y crea un borrador idéntico para editar y reenviar.'],
@@ -206,7 +207,8 @@ Usá el encabezado Idempotency-Key en POST /envelopes: si repetís la misma clav
 POST ${api}/envelopes
 Cuerpo JSON:
 - title (string, obligatorio, máx. 160)
-- document_base64 (string, obligatorio): el PDF en base64, máx. 15 MB, sin contraseña.
+- document_base64 (string): el PDF en base64, máx. 15 MB, sin contraseña.
+- documents (array, alternativa a document_base64): [{ "name", "document_base64" }] hasta 10 PDF que se unen en un solo sobre, en ese orden (máx. 25 MB y 200 páginas en total). Las páginas se numeran de corrido: si el primero tiene 3 páginas, la página 1 del segundo es la 4.
 - recipients (array, obligatorio): [{ "name", "email", "role": "signer" | "cc" (por defecto signer), "order": 1.. (solo si sequential) }]
 - fields (array, opcional): [{ "recipient": índice (desde 0) o email, "type", "page" (desde 1), "x", "y", "width", "height" (fracciones 0..1 de la página, origen arriba a la izquierda), "required" (bool), "label" }]
   Si no mandás fields, DocSure ubica firma y fecha de cada firmante al pie de la última página (hasta 6 firmantes).
@@ -323,11 +325,12 @@ export function openapiSpec(config) {
           },
         },
         CreateEnvelope: {
-          type: 'object', required: ['title', 'document_base64', 'recipients'],
+          type: 'object', required: ['title', 'recipients'],
           properties: {
             title: { type: 'string', maxLength: 160 },
             message: { type: 'string', maxLength: 1000 },
-            document_base64: { type: 'string', description: 'PDF en base64 (máx. 15 MB).' },
+            document_base64: { type: 'string', description: 'PDF en base64 (máx. 15 MB). Obligatorio salvo que uses documents.' },
+            documents: { type: 'array', maxItems: 10, items: { type: 'object', required: ['document_base64'], properties: { name: { type: 'string' }, document_base64: { type: 'string' } } }, description: 'Varios PDF unidos en orden en un solo sobre (máx. 25 MB y 200 páginas en total).' },
             recipients: { type: 'array', items: { $ref: '#/components/schemas/Recipient' }, minItems: 1, maxItems: 50 },
             fields: { type: 'array', items: { $ref: '#/components/schemas/Field' }, description: 'Opcional. Sin fields se ubican firma y fecha al pie de la última página.' },
             sequential: { type: 'boolean', default: false },
@@ -367,6 +370,7 @@ export function openapiSpec(config) {
         get: { summary: 'Ver un sobre', security: auth, parameters: [idParam], responses: { 200: envResp, 404: err } },
         delete: { summary: 'Borrar un borrador', security: auth, parameters: [idParam], responses: { 200: { description: 'ok' }, 409: err } },
       },
+      '/envelopes/{id}/documents': { post: { summary: 'Agregar un PDF a un borrador', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['document_base64'], properties: { name: { type: 'string' }, document_base64: { type: 'string' } } } } } }, responses: { 201: envResp, 400: err, 409: err, 413: err } } },
       '/envelopes/{id}/send': { post: { summary: 'Enviar un borrador', security: auth, parameters: [idParam], responses: { 200: envResp, 400: err, 402: err, 409: err } } },
       '/envelopes/{id}/void': { post: { summary: 'Anular un sobre en curso', security: auth, parameters: [idParam], responses: { 200: envResp, 409: err } } },
       '/envelopes/{id}/recipients/{recipient_id}/resend': { post: { summary: 'Reenviar invitación', security: auth, parameters: [idParam, { name: 'recipient_id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: { description: 'ok' }, 409: err, 429: err } } },
@@ -438,7 +442,8 @@ export function developersPage(config, user) {
       <p>Una sola llamada sube el PDF, carga los destinatarios, ubica los campos y envía los emails. Usá <code>Idempotency-Key</code>: si repetís la llamada con la misma clave no se envía un segundo sobre.</p>
       <table class="params"><thead><tr><th>Campo</th><th>Descripción</th></tr></thead><tbody>
         <tr><td>title</td><td>Obligatorio. Nombre del documento (máx. 160).</td></tr>
-        <tr><td>document_base64</td><td>Obligatorio. PDF en base64, hasta 15 MB y 200 páginas, sin contraseña.</td></tr>
+        <tr><td>document_base64</td><td>PDF en base64, hasta 15 MB y 200 páginas, sin contraseña. Obligatorio salvo que uses <code>documents</code>.</td></tr>
+        <tr><td>documents</td><td>Alternativa para varios PDF en un solo sobre: <code>[{"name", "document_base64"}]</code>, hasta 10 (25 MB y 200 páginas en total). Las páginas se numeran de corrido.</td></tr>
         <tr><td>recipients</td><td>Obligatorio. <code>[{ name, email, role: "signer" | "cc", order }]</code>. "cc" recibe copia del documento final.</td></tr>
         <tr><td>fields</td><td>Opcional. Ver <a href="#campos">Campos</a>. Sin fields, ubicamos firma y fecha al pie de la última página.</td></tr>
         <tr><td>message</td><td>Opcional. Mensaje para los firmantes.</td></tr>

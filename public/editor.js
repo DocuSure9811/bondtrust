@@ -1,5 +1,5 @@
 import { api, esc } from './app-common.js';
-import { renderPdf } from './pdfview.js';
+import { pageLabeler, renderPdf } from './pdfview.js';
 
 const COLORS = ['--signer-0', '--signer-1', '--signer-2', '--signer-3', '--signer-4', '--signer-5'];
 const TYPE_LABEL = { signature: 'Firma', initials: 'Iniciales', date: 'Fecha', name: 'Nombre', email: 'Email', text: 'Texto', checkbox: '☐' };
@@ -8,6 +8,7 @@ const DEFAULT_SIZE = { signature: [0.26, 0.06], initials: [0.1, 0.05], date: [0.
 const state = {
   id: null,
   pdf: null,
+  documents: [],
   title: '',
   message: '',
   sequential: false,
@@ -61,47 +62,95 @@ async function saveDraft() {
   });
 }
 
-// ---------- Paso 1: documento ----------
-async function handleFile(file) {
+// ---------- Paso 1: documentos ----------
+const docName = (file) => file.name.replace(/\.pdf$/i, '').slice(0, 160) || 'Documento';
+
+function renderDocs() {
+  const list = $('docs');
+  const many = state.documents.length > 1;
+  list.hidden = state.documents.length === 0;
+  list.innerHTML = state.documents.map((d, i) => `<li><div><strong>${i + 1}. ${esc(d.name)}</strong><small>${d.pages} página${d.pages === 1 ? '' : 's'}</small></div>
+    ${many ? `<button class="btn btn-ghost btn-sm" type="button" data-remove-doc="${i}" aria-label="Quitar ${esc(d.name)}">Quitar</button>` : ''}</li>`).join('');
+  $('drop-text').textContent = state.documents.length ? 'Agregar otro PDF' : 'Elegí o arrastrá uno o varios PDF';
+  $('step1-actions').hidden = !state.id;
+}
+
+async function reloadPdf() {
+  state.pdf = await (await api(`/api/sobres/${state.id}/original.pdf`, { raw: true })).arrayBuffer();
+  state.rendered = false;
+}
+
+async function handleFiles(fileList) {
   const err = $('err1');
   err.textContent = '';
-  if (!file) return;
-  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-    err.textContent = 'Elegí un archivo PDF.';
-    return;
+  const files = [...fileList];
+  if (!files.length) return;
+  for (const file of files) {
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) return void (err.textContent = `${file.name} no es un PDF.`);
+    if (file.size > 15 * 1024 * 1024) return void (err.textContent = `${file.name} supera 15 MB.`);
   }
-  if (file.size > 15 * 1024 * 1024) {
-    err.textContent = 'El PDF supera 15 MB.';
-    return;
-  }
-  const title = $('title').value.trim() || file.name.replace(/\.pdf$/i, '').slice(0, 160);
-  $('title').value = title;
-  const bytes = await file.arrayBuffer();
-  const label = document.querySelector('#drop .dropzone-label strong');
-  label.textContent = 'Subiendo…';
+  if (state.documents.length + files.length > 10) return void (err.textContent = 'Máximo 10 documentos por sobre.');
+  const label = $('drop-text');
+  const firstUpload = !state.id;
   try {
-    const res = await api(`/api/sobres?title=${encodeURIComponent(title)}`, { method: 'POST', body: bytes });
-    state.id = res.id;
-    state.pdf = bytes;
-    state.title = title;
-    state.fields = [];
-    state.selected = null;
-    state.rendered = false;
-    state.idempotencyKey = crypto.randomUUID();
-    history.replaceState(null, '', `/app/nuevo?id=${res.id}`);
+    for (const [n, file] of files.entries()) {
+      label.textContent = files.length > 1 ? `Subiendo ${n + 1} de ${files.length}…` : 'Subiendo…';
+      const bytes = await file.arrayBuffer();
+      if (!state.id) {
+        const title = $('title').value.trim() || docName(file);
+        $('title').value = title;
+        const res = await api(`/api/sobres?title=${encodeURIComponent(title)}&name=${encodeURIComponent(docName(file))}`, { method: 'POST', body: bytes });
+        state.id = res.id;
+        state.title = title;
+        state.documents = res.documents;
+        state.pdf = bytes;
+        state.fields = [];
+        state.selected = null;
+        state.rendered = false;
+        state.idempotencyKey = crypto.randomUUID();
+        history.replaceState(null, '', `/app/nuevo?id=${res.id}`);
+      } else {
+        const res = await api(`/api/sobres/${state.id}/documentos?name=${encodeURIComponent(docName(file))}`, { method: 'POST', body: bytes });
+        state.documents = res.documents;
+      }
+    }
+    if (state.documents.length > 1) await reloadPdf();
     if (state.recipients.length === 0) addRecipient();
-    go(2);
+    if (firstUpload && files.length === 1) go(2);
   } catch (e) {
     err.textContent = e.message;
   } finally {
-    label.textContent = 'Elegí o arrastrá un PDF';
+    $('file').value = '';
+    renderDocs();
   }
 }
-$('file').addEventListener('change', (e) => handleFile(e.target.files[0]));
+$('file').addEventListener('change', (e) => handleFiles(e.target.files));
 const drop = $('drop');
 ['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('drag'); }));
 ['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, () => drop.classList.remove('drag')));
-drop.addEventListener('drop', (e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); });
+drop.addEventListener('drop', (e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); });
+
+$('docs').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-remove-doc]');
+  if (!b) return;
+  const doc = state.documents[Number(b.dataset.removeDoc)];
+  if (!confirm(`¿Quitar “${doc.name}” del sobre? Se borran los campos ubicados en sus páginas.`)) return;
+  b.disabled = true;
+  try {
+    const res = await api(`/api/sobres/${state.id}/documentos/${b.dataset.removeDoc}`, { method: 'DELETE' });
+    const { start, count } = res.removed;
+    state.fields = state.fields
+      .filter((f) => f.page < start || f.page >= start + count)
+      .map((f) => (f.page >= start + count ? { ...f, page: f.page - count } : f));
+    state.selected = null;
+    state.documents = res.documents;
+    await reloadPdf();
+    renderDocs();
+  } catch (err) {
+    $('err1').textContent = err.message;
+    b.disabled = false;
+  }
+});
 
 // ---------- Paso 2: destinatarios ----------
 function addRecipient(data = {}) {
@@ -234,7 +283,7 @@ async function enterFields() {
     const container = document.createElement('div');
     container.className = 'pages';
     pagesEl.replaceChildren(container);
-    await renderPdf(state.pdf, container, { maxWidth: 860 });
+    await renderPdf(state.pdf, container, { maxWidth: 860, label: pageLabeler(state.documents) });
     container.querySelectorAll('.page-wrap').forEach((wrap) => wrap.addEventListener('pointerdown', onPagePointerDown));
     state.rendered = true;
   }
@@ -411,6 +460,8 @@ if (draftId) {
       const res = await api(`/api/sobres/${draftId}/original.pdf`, { raw: true });
       state.pdf = await res.arrayBuffer();
       state.id = draftId;
+      state.documents = envelope.documents;
+      renderDocs();
       state.title = envelope.title;
       state.message = envelope.message;
       $('title').value = envelope.title;

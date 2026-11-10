@@ -1,6 +1,7 @@
 /** Textos de la experiencia de firma en español, inglés y portugués. */
 export const DICT = {
   es: {
+    pageWord: { page: 'Página', of: 'de' },
     cantSign: 'No podés firmar con este enlace', knowDocsure: 'Conocé DocSure', sentBy: (s) => `Enviado por ${s}`,
     hello: (n) => `Hola ${n}`, sentYou: (s, t) => `<strong>${s}</strong> te envió <strong>${t}</strong> para firmar.`,
     protect: (e) => `Para proteger el documento, primero confirmá tu identidad con un código que te enviamos a <strong>${e}</strong>.`,
@@ -22,6 +23,7 @@ export const DICT = {
     errors: {},
   },
   en: {
+    pageWord: { page: 'Page', of: 'of' },
     cantSign: 'You can’t sign with this link', knowDocsure: 'About DocSure', sentBy: (s) => `Sent by ${s}`,
     hello: (n) => `Hi ${n}`, sentYou: (s, t) => `<strong>${s}</strong> sent you <strong>${t}</strong> to sign.`,
     protect: (e) => `To protect the document, first confirm your identity with a code we’ll send to <strong>${e}</strong>.`,
@@ -49,6 +51,7 @@ export const DICT = {
     },
   },
   pt: {
+    pageWord: { page: 'Página', of: 'de' },
     cantSign: 'Você não pode assinar com este link', knowDocsure: 'Conheça a DocSure', sentBy: (s) => `Enviado por ${s}`,
     hello: (n) => `Olá ${n}`, sentYou: (s, t) => `<strong>${s}</strong> enviou <strong>${t}</strong> para você assinar.`,
     protect: (e) => `Para proteger o documento, primeiro confirme sua identidade com um código que enviaremos para <strong>${e}</strong>.`,

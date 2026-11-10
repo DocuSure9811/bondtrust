@@ -2,8 +2,24 @@ import * as pdfjsLib from '/vendor/pdfjs-dist/build/pdf.min.mjs';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs-dist/build/pdf.worker.min.mjs';
 
+/**
+ * Texto de la etiqueta de cada página. Con varios documentos indica a cuál pertenece:
+ * "Anexo · página 2 de 3".
+ */
+export function pageLabeler(documents, word = { page: 'Página', of: 'de' }) {
+  return (i, total) => {
+    if (!documents || documents.length < 2) return `${word.page} ${i} ${word.of} ${total}`;
+    let first = 1;
+    for (const d of documents) {
+      if (i < first + d.pages) return `${d.name} · ${word.page.toLowerCase()} ${i - first + 1} ${word.of} ${d.pages}`;
+      first += d.pages;
+    }
+    return `${word.page} ${i} ${word.of} ${total}`;
+  };
+}
+
 /** Dibuja cada página del PDF en un contenedor. Devuelve los envoltorios de página (posicionables). */
-export async function renderPdf(bytes, container, { maxWidth = 900 } = {}) {
+export async function renderPdf(bytes, container, { maxWidth = 900, label = pageLabeler() } = {}) {
   const pdf = await pdfjsLib.getDocument({
     data: new Uint8Array(bytes),
     isEvalSupported: false,
@@ -27,10 +43,10 @@ export async function renderPdf(bytes, container, { maxWidth = 900 } = {}) {
     wrap.style.width = '100%';
     wrap.style.maxWidth = `${width}px`;
     wrap.dataset.page = String(i);
-    const label = document.createElement('span');
-    label.className = 'page-label';
-    label.textContent = `Página ${i} de ${pdf.numPages}`;
-    wrap.append(label, canvas);
+    const tag = document.createElement('span');
+    tag.className = 'page-label';
+    tag.textContent = label(i, pdf.numPages);
+    wrap.append(tag, canvas);
     container.appendChild(wrap);
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
     wraps.push(wrap);

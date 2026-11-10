@@ -1,5 +1,5 @@
 import { api, esc } from './app-common.js';
-import { renderPdf } from './pdfview.js';
+import { pageLabeler, renderPdf } from './pdfview.js';
 import { DICT, pickLang } from './sign-i18n.js';
 
 const token = location.pathname.split('/').pop();
@@ -173,7 +173,7 @@ async function documentStep() {
   data = fieldData;
   const bytes = await pdfRes.arrayBuffer();
   root.innerHTML = `<p class="muted center" id="instructions">${t.instructions}</p><div class="sign-pages" id="pages"></div>`;
-  await renderPdf(bytes, document.getElementById('pages'), { maxWidth: 880 });
+  await renderPdf(bytes, document.getElementById('pages'), { maxWidth: 880, label: pageLabeler(data.documents, t.pageWord) });
   placeFields();
   renderBar();
 }

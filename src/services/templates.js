@@ -1,6 +1,6 @@
 import { randomToken } from '../security.js';
 import { HttpError, cleanText } from '../validate.js';
-import { createDraft, saveDraft, sendEnvelope } from './envelopes.js';
+import { createDraft, documentsOf, saveDraft, sendEnvelope } from './envelopes.js';
 
 const MAX_BULK_ROWS = 200;
 
@@ -13,7 +13,7 @@ export async function saveTemplate(ctx, ownerId, envelopeId, name) {
   checkId(envelopeId);
   const clean = cleanText(name, { max: 120, field: 'el nombre de la plantilla' });
   const { rows: [env] } = await ctx.pool.query(
-    'SELECT id, message, sequential, language, original_pdf, page_count FROM envelopes WHERE id = $1 AND owner_id = $2',
+    'SELECT id, title, message, sequential, language, original_pdf, original_sha256, page_count, documents FROM envelopes WHERE id = $1 AND owner_id = $2',
     [envelopeId, ownerId],
   );
   if (!env) throw new HttpError(404, 'Sobre no encontrado.', 'not_found');
@@ -30,9 +30,9 @@ export async function saveTemplate(ctx, ownerId, envelopeId, name) {
   const { rows: fields } = await ctx.pool.query('SELECT recipient_id, type, page, x, y, w, h, required, label FROM fields WHERE envelope_id = $1', [envelopeId]);
   const tplFields = fields.map((f) => ({ role: index.get(f.recipient_id), type: f.type, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h, required: f.required, label: f.label }));
   const { rows: [tpl] } = await ctx.pool.query(
-    `INSERT INTO templates (owner_id, name, message, sequential, language, pdf, page_count, roles, fields)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name, created_at`,
-    [ownerId, clean, env.message, env.sequential, env.language, env.original_pdf, env.page_count, JSON.stringify(roles), JSON.stringify(tplFields)],
+    `INSERT INTO templates (owner_id, name, message, sequential, language, pdf, page_count, roles, fields, documents)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id, name, created_at`,
+    [ownerId, clean, env.message, env.sequential, env.language, env.original_pdf, env.page_count, JSON.stringify(roles), JSON.stringify(tplFields), JSON.stringify(documentsOf(env))],
   );
   return tpl;
 }
@@ -71,7 +71,7 @@ export async function useTemplate(ctx, owner, templateId, body, meta, idempotenc
     throw new HttpError(400, `La plantilla tiene ${tpl.roles.length} rol(es): indicá un destinatario para cada uno (${tpl.roles.map((r) => r.label).join(', ')}).`, 'validation');
   }
   const title = body.title || tpl.name;
-  const { id } = await createDraft(ctx, owner.id, { title, pdf: tpl.pdf });
+  const { id } = await createDraft(ctx, owner.id, { title, pdf: tpl.pdf, documents: tpl.documents });
   try {
     await ctx.pool.query('UPDATE envelopes SET template_id = $2 WHERE id = $1', [id, tpl.id]);
     await saveDraft(ctx, owner.id, id, {

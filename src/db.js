@@ -183,6 +183,10 @@ CREATE TABLE IF NOT EXISTS templates (
 );
 CREATE INDEX IF NOT EXISTS templates_owner_idx ON templates (owner_id, created_at DESC);
 
+-- v0.5: varios documentos por sobre
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS documents jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE templates ADD COLUMN IF NOT EXISTS documents jsonb NOT NULL DEFAULT '[]'::jsonb;
+
 -- v0.5: contactos
 CREATE TABLE IF NOT EXISTS contacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

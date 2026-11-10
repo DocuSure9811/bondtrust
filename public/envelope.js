@@ -5,6 +5,8 @@ const id = location.pathname.split('/').pop();
 
 const EVENT_LABELS = {
   created: 'Sobre creado',
+  document_added: 'Documento agregado',
+  document_removed: 'Documento quitado',
   sent: 'Sobre enviado',
   email_sent: 'Invitación enviada',
   reminder_sent: 'Recordatorio enviado',
@@ -70,6 +72,7 @@ async function load() {
         ${e.status === 'sent' && ['sent', 'viewed'].includes(r.status) ? `<button class="btn btn-ghost btn-sm" data-resend="${r.id}">Reenviar</button><button class="btn btn-ghost btn-sm" data-inperson="${r.id}">Firmar en persona</button>` : ''}</div></li>`).join('')}</ul>
       ${e.final_sha256 ? `<p class="fine">Huella SHA-256 del documento final: <code class="hash">${esc(e.final_sha256)}</code></p>` : ''}
       <p class="fine">Huella SHA-256 del original: <code class="hash">${esc(e.original_sha256)}</code></p>
+      ${e.documents.length > 1 ? `<p class="fine"><strong>Documentos (${e.documents.length}):</strong> ${e.documents.map((d) => `${esc(d.name)} (${d.pages} pág.)`).join(' · ')}</p>` : ''}
     </section>
     <section class="card"><h2>Historial</h2><ol class="timeline">${events.map((ev) => `
       <li><time datetime="${esc(ev.created_at)}">${fmtDate(ev.created_at, true)}</time>${esc(EVENT_LABELS[ev.type] || ev.type)}${ev.recipient_id && byId.get(ev.recipient_id) ? ` · ${esc(byId.get(ev.recipient_id).name)}` : ''}</li>`).join('')}</ol></section>

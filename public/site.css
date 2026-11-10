@@ -466,6 +466,8 @@ dialog::backdrop { background: rgba(6, 38, 31, .55); }
   .app-nav { order: 3; width: 100%; padding-bottom: 8px; }
 }
 .m-put { background: #b7791f; }
+.doc-list { margin: 4px 0 14px; }
+.page-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 @media (max-width: 640px) {
   .sign-header-row { flex-wrap: wrap; gap: 8px 12px; padding: 8px 0; }
   .sign-doc-info { order: 3; width: 100%; margin-left: 0; text-align: left; font-size: .85rem; }

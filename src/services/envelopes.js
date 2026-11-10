@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { withTransaction } from '../db.js';
 import { formatLongDate, langOf, templates } from '../mail.js';
-import { buildFinalPdf, inspectPdf } from '../pdf/final.js';
+import { MAX_PAGES, assemblePdf, buildFinalPdf, inspectPdf } from '../pdf/final.js';
 import { planOf } from '../plans.js';
 import { hmac, maskEmail, newOtp, randomToken, safeEqualHex, sha256Hex } from '../security.js';
 import { HttpError, cleanEmail, cleanNumber, cleanPngDataUrl, cleanText } from '../validate.js';
@@ -73,17 +73,78 @@ async function issueCredentials(ctx, db, recipientId, expiresAt, extraSet = '') 
 
 // ---------- Remitente ----------
 
-export async function createDraft(ctx, ownerId, { title, pdf }) {
+const MAX_PDF_BYTES = 15 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 25 * 1024 * 1024;
+const MAX_DOCUMENTS = 10;
+
+const docName = (name, fallback) => cleanText(String(name || fallback || '').replace(/\.pdf$/i, '').trim() || fallback, { max: 160, field: 'el nombre del documento' });
+
+/** Documentos del sobre; los sobres anteriores a v0.5 tienen uno solo implícito. */
+export function documentsOf(env) {
+  return env.documents?.length ? env.documents : [{ name: env.title, pages: env.page_count, sha256: env.original_sha256 }];
+}
+
+export async function createDraft(ctx, ownerId, { title, pdf, documentName, documents }) {
   const cleanTitle = cleanText(title, { max: 160, field: 'el nombre del documento' });
-  if (pdf.length > 15 * 1024 * 1024) throw new HttpError(413, 'El PDF supera 15 MB.', 'too_large');
+  if (pdf.length > MAX_PDF_BYTES) throw new HttpError(413, 'El PDF supera 15 MB.', 'too_large');
   const { pageCount } = await inspectPdf(pdf);
+  const docs = documents?.length ? documents : [{ name: docName(documentName, cleanTitle), pages: pageCount, sha256: sha256Hex(pdf) }];
   const { rows } = await ctx.pool.query(
-    `INSERT INTO envelopes (owner_id, title, original_pdf, original_sha256, page_count)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [ownerId, cleanTitle, pdf, sha256Hex(pdf), pageCount],
+    `INSERT INTO envelopes (owner_id, title, original_pdf, original_sha256, page_count, documents)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [ownerId, cleanTitle, pdf, sha256Hex(pdf), pageCount, JSON.stringify(docs)],
   );
   await addEvent(ctx.pool, rows[0].id, 'created');
-  return { id: rows[0].id, pageCount };
+  return { id: rows[0].id, pageCount, documents: docs };
+}
+
+/** Agrega un PDF al final de un borrador. Los campos ya ubicados no se mueven. */
+export async function appendDocument(ctx, ownerId, id, { name, pdf }) {
+  if (!Buffer.isBuffer(pdf)) throw new HttpError(415, 'Subí un archivo PDF.', 'invalid_pdf');
+  if (pdf.length > MAX_PDF_BYTES) throw new HttpError(413, 'El PDF supera 15 MB.', 'too_large');
+  const { pageCount: added } = await inspectPdf(pdf);
+  return withTransaction(ctx.pool, async (db) => {
+    const env = await ownedEnvelope(db, ownerId, id, { lock: true });
+    if (env.status !== 'draft') throw new HttpError(409, 'Solo se pueden agregar documentos a un borrador.', 'not_draft');
+    const { rows: [cur] } = await db.query('SELECT original_pdf FROM envelopes WHERE id = $1', [id]);
+    const docs = documentsOf(env);
+    if (docs.length >= MAX_DOCUMENTS) throw new HttpError(400, `Máximo ${MAX_DOCUMENTS} documentos por sobre.`, 'validation');
+    if (env.page_count + added > MAX_PAGES) throw new HttpError(400, `El sobre no puede superar ${MAX_PAGES} páginas en total.`, 'validation');
+    if (cur.original_pdf.length + pdf.length > MAX_TOTAL_BYTES) throw new HttpError(413, 'Los documentos del sobre superan 25 MB en total.', 'too_large');
+    const merged = await assemblePdf([{ bytes: cur.original_pdf }, { bytes: pdf }]);
+    const next = [...docs, { name: docName(name, `Documento ${docs.length + 1}`), pages: added, sha256: sha256Hex(pdf) }];
+    await db.query(
+      'UPDATE envelopes SET original_pdf = $2, original_sha256 = $3, page_count = $4, documents = $5, updated_at = now() WHERE id = $1',
+      [id, merged, sha256Hex(merged), env.page_count + added, JSON.stringify(next)],
+    );
+    await addEvent(db, id, 'document_added', { data: { name: next.at(-1).name, pages: added } });
+    return { pageCount: env.page_count + added, documents: next };
+  });
+}
+
+/** Quita un documento de un borrador: borra sus campos y corre los de las páginas siguientes. */
+export async function removeDocument(ctx, ownerId, id, index) {
+  const i = Number(index);
+  return withTransaction(ctx.pool, async (db) => {
+    const env = await ownedEnvelope(db, ownerId, id, { lock: true });
+    if (env.status !== 'draft') throw new HttpError(409, 'Solo se pueden quitar documentos de un borrador.', 'not_draft');
+    const docs = documentsOf(env);
+    if (!Number.isInteger(i) || i < 0 || i >= docs.length) throw new HttpError(404, 'Documento no encontrado.', 'not_found');
+    if (docs.length === 1) throw new HttpError(400, 'El sobre necesita al menos un documento.', 'validation');
+    const start = docs.slice(0, i).reduce((n, d) => n + d.pages, 0) + 1;
+    const count = docs[i].pages;
+    const { rows: [cur] } = await db.query('SELECT original_pdf FROM envelopes WHERE id = $1', [id]);
+    const rebuilt = await assemblePdf([{ bytes: cur.original_pdf, keep: (p) => p + 1 < start || p + 1 >= start + count }]);
+    const next = docs.filter((_, n) => n !== i);
+    await db.query('DELETE FROM fields WHERE envelope_id = $1 AND page BETWEEN $2 AND $3', [id, start, start + count - 1]);
+    await db.query('UPDATE fields SET page = page - $3 WHERE envelope_id = $1 AND page > $2', [id, start + count - 1, count]);
+    await db.query(
+      'UPDATE envelopes SET original_pdf = $2, original_sha256 = $3, page_count = $4, documents = $5, updated_at = now() WHERE id = $1',
+      [id, rebuilt, sha256Hex(rebuilt), env.page_count - count, JSON.stringify(next)],
+    );
+    await addEvent(db, id, 'document_removed', { data: { name: docs[i].name } });
+    return { pageCount: env.page_count - count, documents: next, removed: { start, count } };
+  });
 }
 
 async function ownedEnvelope(db, ownerId, id, { lock = false } = {}) {
@@ -91,7 +152,7 @@ async function ownedEnvelope(db, ownerId, id, { lock = false } = {}) {
   const { rows } = await db.query(
     `SELECT id, owner_id, title, message, status, sequential, page_count, original_sha256, final_sha256,
             send_idempotency_key, expires_at, sent_at, completed_at, created_at, language, expire_days,
-            reminder_days, corrected_from, template_id
+            reminder_days, corrected_from, template_id, documents
        FROM envelopes WHERE id = $1 AND owner_id = $2 ${lock ? 'FOR UPDATE' : ''}`,
     [id, ownerId],
   );
@@ -335,7 +396,7 @@ export async function envelopeDetail(ctx, ownerId, id) {
     [id],
   );
   const { send_idempotency_key: _k, owner_id: _o, ...publicEnv } = env;
-  return { envelope: publicEnv, recipients, fields, events };
+  return { envelope: { ...publicEnv, documents: documentsOf(env) }, recipients, fields, events };
 }
 
 export async function ownerPdf(ctx, ownerId, id, which) {
@@ -458,7 +519,8 @@ export async function signingFields(ctx, token, session) {
     'SELECT id, type, page, x, y, w, h, required, label FROM fields WHERE recipient_id = $1 ORDER BY page, y, x',
     [r.id],
   );
-  return { fields: rows, name: r.name, email: r.email, today: shortDate(new Date()) };
+  const { rows: [env] } = await ctx.pool.query('SELECT title, page_count, original_sha256, documents FROM envelopes WHERE id = $1', [r.envelope_id]);
+  return { fields: rows, name: r.name, email: r.email, today: shortDate(new Date()), documents: documentsOf(env).map((d) => ({ name: d.name, pages: d.pages })) };
 }
 
 export async function signDocument(ctx, token, body, meta) {
@@ -542,7 +604,7 @@ async function advance(ctx, envelopeId) {
 /** Genera el PDF final sellado y notifica. Idempotente: solo una ejecución puede completar el sobre. */
 export async function completeEnvelope(ctx, envelopeId) {
   const { rows: [envelope] } = await ctx.pool.query(
-    `SELECT id, title, status, page_count, original_pdf, original_sha256, created_at, sent_at, owner_id FROM envelopes WHERE id = $1`,
+    `SELECT id, title, status, page_count, original_pdf, original_sha256, created_at, sent_at, owner_id, documents FROM envelopes WHERE id = $1`,
     [envelopeId],
   );
   if (!envelope || envelope.status !== 'sent') return;
@@ -555,7 +617,7 @@ export async function completeEnvelope(ctx, envelopeId) {
   const finalPdf = await buildFinalPdf({
     original: envelope.original_pdf,
     fields,
-    envelope: { ...envelope, completed_at: completedAt },
+    envelope: { ...envelope, documents: documentsOf(envelope), completed_at: completedAt },
     owner,
     recipients,
     events,
@@ -629,8 +691,8 @@ function autoFields(recipients, pageCount) {
   });
 }
 
-function decodePdf(value) {
-  if (typeof value !== 'string' || value.length < 10) throw new HttpError(400, 'Falta document_base64 con el PDF en base64.', 'validation');
+export function decodePdf(value) {
+  if (typeof value !== 'string' || value.length < 10) throw new HttpError(400, 'Falta document_base64 con el PDF en base64 (o "documents": [{"name","document_base64"}]).', 'validation');
   const b64 = value.replace(/^data:application\/pdf;base64,/, '').replace(/\s+/g, '');
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) throw new HttpError(400, 'document_base64 no es base64 válido.', 'validation');
   return Buffer.from(b64, 'base64');
@@ -652,6 +714,7 @@ export async function apiEnvelope(ctx, ownerId, id) {
     expires_at: e.expires_at,
     original_sha256: e.original_sha256,
     final_sha256: e.final_sha256,
+    documents: e.documents,
     recipients: recipients.map((r) => ({
       id: r.id, name: r.name, email: r.email, role: r.role, routing_order: r.routing_order,
       status: r.status, signed_at: r.signed_at, declined_at: r.declined_at, decline_reason: r.decline_reason,
@@ -675,8 +738,14 @@ export async function createFromApi(ctx, owner, body, idempotencyKey, meta) {
   }
   const recipientsIn = Array.isArray(body.recipients) ? body.recipients : [];
   if (!recipientsIn.length) throw new HttpError(400, 'Indicá al menos un destinatario en "recipients".', 'validation');
-  const { id, pageCount } = await createDraft(ctx, owner.id, { title: body.title, pdf: decodePdf(body.document_base64) });
+  const docsIn = Array.isArray(body.documents) && body.documents.length ? body.documents : null;
+  if (docsIn && docsIn.length > MAX_DOCUMENTS) throw new HttpError(400, `Máximo ${MAX_DOCUMENTS} documentos por sobre.`, 'validation');
+  const first = docsIn ? docsIn[0] : { document_base64: body.document_base64 };
+  const created = await createDraft(ctx, owner.id, { title: body.title, pdf: decodePdf(first?.document_base64), documentName: first?.name });
+  const { id } = created;
+  let { pageCount } = created;
   try {
+    for (const d of docsIn ? docsIn.slice(1) : []) ({ pageCount } = await appendDocument(ctx, owner.id, id, { name: d?.name, pdf: decodePdf(d?.document_base64) }));
     if (key) await ctx.pool.query('UPDATE envelopes SET create_idempotency_key = $2 WHERE id = $1', [id, key]);
     const recipients = recipientsIn.map((r, i) => ({ key: `r${i}`, name: r?.name, email: r?.email, role: r?.role === 'cc' ? 'cc' : 'signer', order: r?.order ?? i + 1 }));
     const fields = Array.isArray(body.fields) && body.fields.length
@@ -705,9 +774,9 @@ export async function createFromApi(ctx, owner, body, idempotencyKey, meta) {
 async function cloneAsDraft(db, src, correctedFrom) {
   const { rows: [created] } = await db.query(
     `INSERT INTO envelopes (owner_id, title, message, sequential, language, expire_days, reminder_days,
-                            original_pdf, original_sha256, page_count, corrected_from, template_id)
+                            original_pdf, original_sha256, page_count, corrected_from, template_id, documents)
      SELECT owner_id, title, message, sequential, language, expire_days, reminder_days,
-            original_pdf, original_sha256, page_count, $2, template_id FROM envelopes WHERE id = $1 RETURNING id`,
+            original_pdf, original_sha256, page_count, $2, template_id, documents FROM envelopes WHERE id = $1 RETURNING id`,
     [src, correctedFrom],
   );
   const { rows: recips } = await db.query('SELECT id, position, name, email, role, routing_order FROM recipients WHERE envelope_id = $1 ORDER BY position', [src]);
