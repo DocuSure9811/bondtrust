@@ -45,7 +45,7 @@ export async function uploadAttachment(ctx, token, session, fieldId, { name, byt
      ON CONFLICT (field_id) DO UPDATE SET name = EXCLUDED.name, content_type = EXCLUDED.content_type, size = EXCLUDED.size,
        sha256 = EXCLUDED.sha256, data = EXCLUDED.data, created_at = now()
      RETURNING id, name, size, content_type`,
-    [r.envelope_id, field.id, r.id, clean, type, bytes.length, sha256Hex(bytes)],
+    [r.envelope_id, field.id, r.id, clean, type, bytes.length, sha256Hex(bytes), bytes],
   );
   await addEvent(ctx.pool, r.envelope_id, 'attachment_uploaded', { recipientId: r.id, ...meta, data: { name: clean } });
   return a;
