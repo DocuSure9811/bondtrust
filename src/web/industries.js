@@ -168,12 +168,12 @@ export function industryPage(config, user, slug) {
 </div></section>
 <section class="section section-soft"><div class="wrap">
   <h2 class="section-title">Cómo te ayuda DocSure</h2>
-  <div class="feature-grid">${ind.features.map(([t, d, href]) => `<article class="feature"><span class="ic ic-shield" aria-hidden="true"></span><h3>${t}</h3><p>${d}</p><p><a class="link-strong" href="${href}">Ver más →</a></p></article>`).join('')}</div>
+  <div class="feature-grid grid-4">${ind.features.map(([t, d, href]) => `<article class="feature"><span class="ic ic-shield" aria-hidden="true"></span><h3>${t}</h3><p>${d}</p><p><a class="link-strong" href="${href}">Ver más →</a></p></article>`).join('')}</div>
 </div></section>
 <section class="section"><div class="wrap narrow">
   <h2 class="section-title">Preguntas frecuentes</h2>
   <div class="faq">${ind.faq.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join('')}</div>
-  <p class="center muted small">Otras soluciones: ${others.map(([s, o]) => `<a href="/soluciones/${s}">${o.name}</a>`).join(' · ')}</p>
+  <p class="center muted small other-solutions">Otras soluciones: ${others.map(([s, o]) => `<a href="/soluciones/${s}">${o.name}</a>`).join(' · ')}</p>
 </div></section>
 <section class="cta-band"><div class="wrap cta-row">
   <div><h2>Probalo con tu próximo documento.</h2><p>5 sobres gratis por mes, sin tarjeta.</p></div>
