@@ -2,7 +2,7 @@ export async function api(path, { method = 'GET', body, headers = {}, raw = fals
   const opts = { method, headers: { 'X-DocSure': '1', ...headers }, credentials: 'same-origin' };
   if (body instanceof ArrayBuffer || body instanceof Uint8Array) {
     opts.body = body;
-    opts.headers['Content-Type'] = 'application/pdf';
+    opts.headers['Content-Type'] = headers['Content-Type'] || 'application/pdf';
   } else if (body !== undefined) {
     opts.body = JSON.stringify(body);
     opts.headers['Content-Type'] = 'application/json';

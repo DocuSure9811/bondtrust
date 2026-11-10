@@ -99,3 +99,47 @@ test('campos nuevos: opción única, múltiple, número con fórmula, teléfono,
   assert.ok(final.getPageCount() >= 3, 'la imagen va dentro del campo, no como anexo extra');
   assert.equal(verifySeal(env.final_pdf, sealFingerprint(t.config.sealP12, t.config.sealPassword)).intact, true);
 });
+
+test('documentos de imagen y detección de campos de formularios PDF', async () => {
+  const png = Buffer.from(PNG.split(',')[1], 'base64');
+  const img = await owner('/api/sobres?title=Foto&name=foto.png', { method: 'POST', body: png, headers: { 'content-type': 'image/png' } });
+  assert.equal(img.status, 201, await img.clone().text());
+  const created = await img.json();
+  assert.equal(created.pageCount, 1);
+  assert.equal(created.documents[0].name, 'foto');
+  const orig = Buffer.from(await (await owner(`/api/sobres/${created.id}/original.pdf`)).arrayBuffer());
+  assert.equal(orig.subarray(0, 5).toString(), '%PDF-', 'la foto se convierte en PDF');
+  assert.equal((await owner('/api/sobres?title=x', { method: 'POST', body: Buffer.from('GIF89a....'), headers: { 'content-type': 'image/png' } })).status, 400);
+
+  // Formulario PDF con campos
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([600, 800]);
+  const form = doc.getForm();
+  form.createTextField('Nombre completo').addToPage(page, { x: 50, y: 700, width: 200, height: 20 });
+  form.createCheckBox('Acepto').addToPage(page, { x: 50, y: 650, width: 15, height: 15 });
+  const dd = form.createDropdown('Provincia');
+  dd.addOptions(['Buenos Aires', 'Córdoba']);
+  dd.addToPage(page, { x: 50, y: 600, width: 150, height: 20 });
+  const rg = form.createRadioGroup('Plan');
+  rg.addOptionToPage('Mensual', page, { x: 50, y: 550, width: 15, height: 15 });
+  rg.addOptionToPage('Anual', page, { x: 100, y: 550, width: 15, height: 15 });
+  const formPdf = Buffer.from(await doc.save());
+  const { id } = await (await owner('/api/sobres?title=Formulario', { method: 'POST', body: formPdf })).json();
+  const { fields } = await (await owner(`/api/sobres/${id}/campos-pdf`)).json();
+  assert.deepEqual(fields.map((f) => f.type).sort(), ['checkbox', 'radio', 'select', 'text']);
+  const text = fields.find((f) => f.type === 'text');
+  assert.equal(text.label, 'Nombre completo');
+  assert.ok(Math.abs(text.x - 50 / 600) < 0.001 && Math.abs(text.y - (1 - 720 / 800)) < 0.001, 'posición convertida');
+  assert.deepEqual(fields.find((f) => f.type === 'radio').options, ['Mensual', 'Anual']);
+
+  // Se usan, se firma y el formulario original queda aplanado
+  const mapped = [F({ key: 'sig', type: 'signature', y: 0.3, h: 0.06 }), ...fields.map((f) => ({ ...f, recipientKey: 's', required: false }))];
+  assert.equal((await owner(`/api/sobres/${id}`, { method: 'PUT', body: { title: 'Formulario', recipients: [{ key: 's', name: 'Form Firma', email: 'form@example.com' }], fields: mapped } })).status, 200);
+  assert.equal((await owner(`/api/sobres/${id}/enviar`, { method: 'POST', headers: { 'idempotency-key': `f-${id}` } })).status, 200);
+  const s = await openSign('form@example.com');
+  assert.equal((await s.sign({ [s.by['Nombre completo']]: 'Ana Pérez', [s.by.Provincia]: 'Córdoba' })).status, 200);
+  const { rows: [env] } = await t.pool.query('SELECT status, final_pdf FROM envelopes WHERE id = $1', [id]);
+  assert.equal(env.status, 'completed');
+  const final = await PDFDocument.load(env.final_pdf);
+  assert.equal(final.getForm().getFields().length, 0, 'el formulario original queda aplanado');
+});

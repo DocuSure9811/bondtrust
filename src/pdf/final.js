@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib';
+import { PDFCheckBox, PDFDocument, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFSignature, PDFTextField, StandardFonts, rgb, degrees } from 'pdf-lib';
 import { HttpError } from '../validate.js';
 
 const require = createRequire(import.meta.url);
@@ -32,6 +32,82 @@ export async function inspectPdf(bytes) {
 }
 
 export { MAX_PAGES };
+
+const A4 = [595.28, 841.89];
+
+/** Acepta PDF, PNG o JPG: una imagen se convierte en una página A4 (vertical u horizontal según la foto). */
+export async function toPdf(bytes) {
+  if (!bytes?.length) throw new HttpError(400, 'El archivo está vacío.', 'invalid_pdf');
+  if (bytes.subarray(0, 5).toString('latin1') === '%PDF-') return bytes;
+  const png = bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const jpg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (!png && !jpg) throw new HttpError(400, 'Subí un PDF o una imagen PNG o JPG.', 'invalid_pdf');
+  const doc = await PDFDocument.create();
+  let image;
+  try {
+    image = png ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+  } catch {
+    throw new HttpError(400, 'No se pudo leer la imagen. Probá exportarla como JPG.', 'invalid_pdf');
+  }
+  const [W, H] = image.width > image.height ? [A4[1], A4[0]] : A4;
+  const margin = 24;
+  const scale = Math.min((W - margin * 2) / image.width, (H - margin * 2) / image.height);
+  const page = doc.addPage([W, H]);
+  page.drawImage(image, { x: (W - image.width * scale) / 2, y: (H - image.height * scale) / 2, width: image.width * scale, height: image.height * scale });
+  return Buffer.from(await doc.save());
+}
+
+/** Lee los campos de un formulario PDF (AcroForm) y los devuelve en coordenadas de DocSure (fracciones de la página). */
+export async function detectFormFields(bytes) {
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+  let form;
+  try {
+    form = doc.getForm();
+  } catch {
+    return [];
+  }
+  const pages = doc.getPages();
+  const pageOf = (widget) => {
+    const ref = widget.P();
+    const byRef = ref ? pages.findIndex((p) => p.ref === ref) : -1;
+    if (byRef >= 0) return byRef;
+    return pages.findIndex((p) => {
+      const annots = p.node.Annots();
+      return annots ? annots.asArray().some((a) => a === widget.dict || doc.context.lookup(a) === widget.dict) : false;
+    });
+  };
+  const out = [];
+  for (const field of form.getFields()) {
+    const type = field instanceof PDFTextField ? 'text'
+      : field instanceof PDFCheckBox ? 'checkbox'
+        : field instanceof PDFDropdown || field instanceof PDFOptionList ? 'select'
+          : field instanceof PDFRadioGroup ? 'radio'
+            : field instanceof PDFSignature ? 'signature' : null;
+    if (!type) continue;
+    const widgets = field.acroField.getWidgets();
+    if (!widgets.length) continue;
+    const pi = pageOf(widgets[0]);
+    if (pi < 0 || pages[pi].getRotation().angle % 360 !== 0) continue;
+    const { width: W, height: H } = pages[pi].getSize();
+    const rects = widgets.filter((w) => pageOf(w) === pi).map((w) => w.getRectangle());
+    const x0 = Math.min(...rects.map((r) => r.x));
+    const y0 = Math.min(...rects.map((r) => r.y));
+    const x1 = Math.max(...rects.map((r) => r.x + r.width));
+    const y1 = Math.max(...rects.map((r) => r.y + r.height));
+    const clamp = (v) => Math.min(1, Math.max(0, v));
+    const options = type === 'select' || type === 'radio' ? field.getOptions().map(String).filter(Boolean).slice(0, 30) : null;
+    if (options && !options.length) continue;
+    out.push({
+      type,
+      page: pi + 1,
+      x: clamp(x0 / W), y: clamp(1 - y1 / H), w: Math.max(0.01, clamp((x1 - x0) / W)), h: Math.max(0.005, clamp((y1 - y0) / H)),
+      label: String(field.getName()).replace(/[^\p{L}\p{N} ._-]/gu, ' ').trim().slice(0, 60),
+      options,
+    });
+    if (out.length >= 300) break;
+  }
+  return out;
+}
 
 /**
  * Arma un PDF nuevo con páginas de varios PDF, en orden.
@@ -231,7 +307,6 @@ class Writer {
   }
 }
 
-const A4 = [595.28, 841.89];
 
 /** Anexa los archivos que subieron los firmantes, cada uno con su encabezado de identificación. */
 async function addAttachments(pdf, attachments) {
@@ -349,6 +424,13 @@ async function addCertificate(pdf, { envelope, owner, recipients, events, siteUr
 
 export async function buildFinalPdf({ original, fields, envelope, owner, recipients, events, attachments = [], siteUrl, sealP12, sealPassword }) {
   const pdf = await PDFDocument.load(original, { updateMetadata: false });
+  // Los formularios PDF originales se aplanan: el documento firmado no puede seguir editándose.
+  try {
+    const form = pdf.getForm();
+    if (form.getFields().length) form.flatten();
+  } catch {
+    // Algunos formularios mal formados no se pueden aplanar; el sello igual detecta cualquier cambio posterior.
+  }
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const pages = pdf.getPages();
   const imageCache = new Map();

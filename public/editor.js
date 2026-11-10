@@ -65,7 +65,9 @@ async function saveDraft() {
 }
 
 // ---------- Paso 1: documentos ----------
-const docName = (file) => file.name.replace(/\.pdf$/i, '').slice(0, 160) || 'Documento';
+const docName = (file) => file.name.replace(/\.(pdf|png|jpe?g)$/i, '').slice(0, 160) || 'Documento';
+const ACCEPTED = ['application/pdf', 'image/png', 'image/jpeg'];
+const typeOf = (file) => (ACCEPTED.includes(file.type) ? file.type : /\.pdf$/i.test(file.name) ? 'application/pdf' : /\.png$/i.test(file.name) ? 'image/png' : /\.jpe?g$/i.test(file.name) ? 'image/jpeg' : null);
 
 function renderDocs() {
   const list = $('docs');
@@ -88,7 +90,7 @@ async function handleFiles(fileList) {
   const files = [...fileList];
   if (!files.length) return;
   for (const file of files) {
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) return void (err.textContent = `${file.name} no es un PDF.`);
+    if (!typeOf(file)) return void (err.textContent = `${file.name} no es un PDF ni una imagen JPG o PNG.`);
     if (file.size > 15 * 1024 * 1024) return void (err.textContent = `${file.name} supera 15 MB.`);
   }
   if (state.documents.length + files.length > 10) return void (err.textContent = 'Máximo 10 documentos por sobre.');
@@ -101,7 +103,7 @@ async function handleFiles(fileList) {
       if (!state.id) {
         const title = $('title').value.trim() || docName(file);
         $('title').value = title;
-        const res = await api(`/api/sobres?title=${encodeURIComponent(title)}&name=${encodeURIComponent(docName(file))}`, { method: 'POST', body: bytes });
+        const res = await api(`/api/sobres?title=${encodeURIComponent(title)}&name=${encodeURIComponent(docName(file))}`, { method: 'POST', body: bytes, headers: { 'Content-Type': typeOf(file) } });
         state.id = res.id;
         state.title = title;
         state.documents = res.documents;
@@ -112,11 +114,11 @@ async function handleFiles(fileList) {
         state.idempotencyKey = crypto.randomUUID();
         history.replaceState(null, '', `/app/nuevo?id=${res.id}`);
       } else {
-        const res = await api(`/api/sobres/${state.id}/documentos?name=${encodeURIComponent(docName(file))}`, { method: 'POST', body: bytes });
+        const res = await api(`/api/sobres/${state.id}/documentos?name=${encodeURIComponent(docName(file))}`, { method: 'POST', body: bytes, headers: { 'Content-Type': typeOf(file) } });
         state.documents = res.documents;
       }
     }
-    if (state.documents.length > 1) await reloadPdf();
+    if (state.documents.length > 1 || files.some((f) => typeOf(f) !== 'application/pdf')) await reloadPdf();
     if (state.recipients.length === 0) addRecipient();
     if (firstUpload && files.length === 1) go(2);
   } catch (e) {
@@ -291,6 +293,21 @@ async function enterFields() {
   }
   drawFields();
 }
+$('detect').addEventListener('click', async () => {
+  const msg = $('detect-msg');
+  msg.textContent = 'Buscando campos…';
+  try {
+    const { fields } = await api(`/api/sobres/${state.id}/campos-pdf`);
+    if (!fields.length) return void (msg.textContent = 'Este PDF no trae campos de formulario. Ubicalos a mano.');
+    for (const f of fields) {
+      state.fields.push({ id: crypto.randomUUID(), recipientKey: state.owner, ...f, required: f.type === 'signature', validation: null, formula: null, showIf: null, options: f.options || null });
+    }
+    msg.textContent = `Agregamos ${fields.length} campo${fields.length === 1 ? '' : 's'} para ${$('field-owner').selectedOptions[0]?.textContent || 'el firmante'}. Revisalos y cambiá el firmante si hace falta.`;
+    drawFields();
+  } catch (e) {
+    msg.textContent = e.message;
+  }
+});
 $('field-owner').addEventListener('change', (e) => { state.owner = e.target.value; });
 $('palette').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-type]');

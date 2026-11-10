@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { withTransaction } from '../db.js';
 import { formatLongDate, langOf, templates } from '../mail.js';
-import { MAX_PAGES, assemblePdf, buildFinalPdf, inspectPdf } from '../pdf/final.js';
+import { MAX_PAGES, assemblePdf, buildFinalPdf, detectFormFields, inspectPdf, toPdf } from '../pdf/final.js';
 import { planOf } from '../plans.js';
 import { hmac, maskEmail, newOtp, randomToken, safeEqualHex, sha256Hex } from '../security.js';
 import { HttpError, cleanEmail, cleanNumber, cleanPngDataUrl, cleanText } from '../validate.js';
@@ -80,15 +80,17 @@ const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 25 * 1024 * 1024;
 const MAX_DOCUMENTS = 10;
 
-const docName = (name, fallback) => cleanText(String(name || fallback || '').replace(/\.pdf$/i, '').trim() || fallback, { max: 160, field: 'el nombre del documento' });
+const docName = (name, fallback) => cleanText(String(name || fallback || '').replace(/\.(pdf|png|jpe?g)$/i, '').trim() || fallback, { max: 160, field: 'el nombre del documento' });
 
 /** Documentos del sobre; los sobres anteriores a v0.5 tienen uno solo implícito. */
 export function documentsOf(env) {
   return env.documents?.length ? env.documents : [{ name: env.title, pages: env.page_count, sha256: env.original_sha256 }];
 }
 
-export async function createDraft(ctx, ownerId, { title, pdf, documentName, documents }) {
+export async function createDraft(ctx, ownerId, { title, pdf: input, documentName, documents }) {
   const cleanTitle = cleanText(title, { max: 160, field: 'el nombre del documento' });
+  if (input.length > MAX_PDF_BYTES) throw new HttpError(413, 'El archivo supera 15 MB.', 'too_large');
+  const pdf = await toPdf(input);
   if (pdf.length > MAX_PDF_BYTES) throw new HttpError(413, 'El PDF supera 15 MB.', 'too_large');
   const { pageCount } = await inspectPdf(pdf);
   const docs = documents?.length ? documents : [{ name: docName(documentName, cleanTitle), pages: pageCount, sha256: sha256Hex(pdf) }];
@@ -102,9 +104,10 @@ export async function createDraft(ctx, ownerId, { title, pdf, documentName, docu
 }
 
 /** Agrega un PDF al final de un borrador. Los campos ya ubicados no se mueven. */
-export async function appendDocument(ctx, ownerId, id, { name, pdf }) {
-  if (!Buffer.isBuffer(pdf)) throw new HttpError(415, 'Subí un archivo PDF.', 'invalid_pdf');
-  if (pdf.length > MAX_PDF_BYTES) throw new HttpError(413, 'El PDF supera 15 MB.', 'too_large');
+export async function appendDocument(ctx, ownerId, id, { name, pdf: input }) {
+  if (!Buffer.isBuffer(input)) throw new HttpError(415, 'Subí un PDF o una imagen.', 'invalid_pdf');
+  if (input.length > MAX_PDF_BYTES) throw new HttpError(413, 'El archivo supera 15 MB.', 'too_large');
+  const pdf = await toPdf(input);
   const { pageCount: added } = await inspectPdf(pdf);
   return withTransaction(ctx.pool, async (db) => {
     const env = await ownedEnvelope(db, ownerId, id, { lock: true });
@@ -123,6 +126,14 @@ export async function appendDocument(ctx, ownerId, id, { name, pdf }) {
     await addEvent(db, id, 'document_added', { data: { name: next.at(-1).name, pages: added } });
     return { pageCount: env.page_count + added, documents: next };
   });
+}
+
+/** Campos de formulario que trae el PDF del borrador, listos para sumar en el editor. */
+export async function detectDraftFields(ctx, ownerId, id) {
+  const env = await ownedEnvelope(ctx.pool, ownerId, id);
+  if (env.status !== 'draft') throw new HttpError(409, 'Solo en borradores.', 'not_draft');
+  const { rows: [row] } = await ctx.pool.query('SELECT original_pdf FROM envelopes WHERE id = $1', [id]);
+  return { fields: await detectFormFields(row.original_pdf) };
 }
 
 /** Quita un documento de un borrador: borra sus campos y corre los de las páginas siguientes. */
@@ -745,7 +756,7 @@ function autoFields(recipients, pageCount) {
 
 export function decodePdf(value) {
   if (typeof value !== 'string' || value.length < 10) throw new HttpError(400, 'Falta document_base64 con el PDF en base64 (o "documents": [{"name","document_base64"}]).', 'validation');
-  const b64 = value.replace(/^data:application\/pdf;base64,/, '').replace(/\s+/g, '');
+  const b64 = value.replace(/^data:[a-z]+\/[a-z+.-]+;base64,/i, '').replace(/\s+/g, '');
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) throw new HttpError(400, 'document_base64 no es base64 válido.', 'validation');
   return Buffer.from(b64, 'base64');
 }

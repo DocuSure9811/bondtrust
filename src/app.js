@@ -130,6 +130,7 @@ export function createApp({ pool, config, mailer }) {
 
   const json = express.json({ limit: '1.5mb' });
   const pdfBody = express.raw({ type: 'application/pdf', limit: '15mb' });
+  const docBody = express.raw({ type: ['application/pdf', 'image/png', 'image/jpeg'], limit: '15mb' });
 
   const requireUser = (req, res, next) => (req.user ? next() : next(new HttpError(401, 'Iniciá sesión.', 'auth')));
   const requirePageUser = (req, res, next) => {
@@ -426,14 +427,15 @@ export function createApp({ pool, config, mailer }) {
   app.post(
     '/api/sobres',
     requireUser,
-    pdfBody,
+    docBody,
     asyncRoute(async (req, res) => {
       limit(`upload:${req.user.id}`, 60, 3600_000);
-      if (!Buffer.isBuffer(req.body)) throw new HttpError(415, 'Subí un archivo PDF.', 'invalid_pdf');
+      if (!Buffer.isBuffer(req.body)) throw new HttpError(415, 'Subí un PDF o una imagen PNG o JPG.', 'invalid_pdf');
       res.status(201).json(await env.createDraft(ctx, req.user.id, { title: req.query.title, pdf: req.body, documentName: req.query.name }));
     }),
   );
-  app.post('/api/sobres/:id/documentos', requireUser, pdfBody, asyncRoute(async (req, res) => {
+  app.get('/api/sobres/:id/campos-pdf', requireUser, asyncRoute(async (req, res) => res.json(await env.detectDraftFields(ctx, req.user.id, req.params.id))));
+  app.post('/api/sobres/:id/documentos', requireUser, docBody, asyncRoute(async (req, res) => {
     limit(`upload:${req.user.id}`, 60, 3600_000);
     res.status(201).json(await env.appendDocument(ctx, req.user.id, req.params.id, { name: req.query.name, pdf: req.body }));
   }));
