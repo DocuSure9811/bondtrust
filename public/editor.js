@@ -391,7 +391,7 @@ $('prop-formula').addEventListener('input', (e) => {
   const f = selectedField();
   if (f) {
     f.formula = e.target.value.trim().slice(0, 300) || null;
-    if (f.formula) f.required = false;
+    if (f.formula) { f.required = false; $('prop-required').checked = false; drawFields(); }
   }
 });
 $('prop-format').addEventListener('change', (e) => {
