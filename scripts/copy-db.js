@@ -28,12 +28,13 @@ try {
   const client = await target.connect();
   try {
     await client.query('BEGIN');
+    await client.query('SET LOCAL session_replication_role = replica');
     for (const t of ordered) {
       let copied = 0;
       for (let offset = 0; ; offset += 200) {
         const { rows } = await source.query(`SELECT json_agg(x) AS rows FROM (SELECT * FROM "${t}" ORDER BY ctid LIMIT 200 OFFSET ${offset}) x`);
         if (!rows[0].rows) break;
-        await client.query(`INSERT INTO "${t}" SELECT * FROM json_populate_recordset(NULL::"${t}", $1::json)`, [JSON.stringify(rows[0].rows)]);
+        await client.query(`INSERT INTO "${t}" SELECT (jsonb_populate_record(NULL::"${t}", e)).* FROM jsonb_array_elements($1::jsonb) e`, [JSON.stringify(rows[0].rows)]);
         copied += rows[0].rows.length;
       }
       const seqs = await client.query(`SELECT column_name AS c, pg_get_serial_sequence(quote_ident(table_name), column_name) AS s
