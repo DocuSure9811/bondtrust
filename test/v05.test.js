@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { PDFDocument } from 'pdf-lib';
 import { sealFingerprint, verifySeal } from '../src/pdf/verify.js';
+import { base32Encode, currentStep, openSecret, sealSecret, totpAt, verifyTotp } from '../src/totp.js';
 import { PNG, client, codeFrom, linkFrom, outbox, samplePdf, startTestApp } from './helpers.js';
 
 let t;
@@ -486,4 +487,94 @@ test('equipos: invitar, aceptar, roles, plantillas compartidas y vista de admini
   assert.equal(rows[0].n, 0);
   assert.equal((await (await beto.c(`/api/sobres/${envB}`)).json()).envelope.can_edit, true, 'el sobre sigue siendo de Beto');
   assert.equal((await ana.c('/app/equipo')).status, 200);
+});
+
+// ---------- Seguridad de la cuenta ----------
+
+test('TOTP: vectores oficiales del RFC 6238 y cifrado del secreto', () => {
+  const secret = base32Encode(Buffer.from('12345678901234567890'));
+  assert.equal(totpAt(secret, Math.floor(59 / 30)), '287082');
+  assert.equal(totpAt(secret, Math.floor(1111111109 / 30)), '081804');
+  assert.equal(totpAt(secret, Math.floor(2000000000 / 30)), '279037');
+  assert.equal(verifyTotp(secret, '287082', { now: 59_000 }), 1);
+  assert.equal(verifyTotp(secret, '287082', { now: 59_000, afterStep: 1 }), null, 'no se reutiliza un paso');
+  assert.equal(verifyTotp(secret, '000000', { now: 59_000 }), null);
+  const sealed = sealSecret(secret, 'clave-servidor');
+  assert.notEqual(sealed.includes(secret), true);
+  assert.equal(openSecret(sealed, 'clave-servidor'), secret);
+  assert.throws(() => openSecret(sealed, 'otra-clave'));
+});
+
+test('verificación en dos pasos, sesiones, contraseña y registro de actividad', async () => {
+  const email = 'seguro@example.com';
+  const a = client(t.base);
+  await a('/api/auth/registro', { method: 'POST', body: { name: 'Sole Segura', email, password: 'clave-segura-1234' } });
+  let sec = await (await a('/api/seguridad')).json();
+  assert.equal(sec.two_factor.enabled, false);
+  assert.equal(sec.sessions.length, 1);
+  assert.equal(sec.sessions[0].current, true);
+  assert.equal(sec.events[0].type, 'signup');
+
+  // Activar
+  assert.equal((await a('/api/seguridad/dos-pasos/activar', { method: 'POST', body: { code: '123456' } })).status, 400, 'sin iniciar');
+  const setup = await (await a('/api/seguridad/dos-pasos/iniciar', { method: 'POST' })).json();
+  assert.match(setup.qr_svg, /^<svg/);
+  assert.match(setup.otpauth_url, /^otpauth:\/\/totp\/DocSure%3Aseguro%40example\.com\?secret=/);
+  const secret = setup.secret.replace(/ /g, '');
+  const { rows: [stored] } = await t.pool.query('SELECT totp_pending FROM users WHERE email = $1', [email]);
+  assert.ok(!stored.totp_pending.includes(secret), 'el secreto se guarda cifrado');
+  assert.equal((await a('/api/seguridad/dos-pasos/activar', { method: 'POST', body: { code: '000000' } })).status, 400);
+  const step = currentStep();
+  const on = await (await a('/api/seguridad/dos-pasos/activar', { method: 'POST', body: { code: totpAt(secret, step) } })).json();
+  assert.equal(on.recovery_codes.length, 10);
+  assert.match(on.recovery_codes[0], /^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+
+  // Ingresar con dos pasos
+  const login = async (c, password = 'clave-segura-1234') => (await c('/api/auth/ingresar', { method: 'POST', body: { email, password } })).json();
+  const b = client(t.base);
+  const first = await login(b);
+  assert.equal(first.two_factor, true);
+  assert.equal((await b('/api/me')).status, 401, 'la contraseña sola no abre sesión');
+  const second = (c, ticket, code) => c('/api/auth/dos-pasos', { method: 'POST', body: { ticket, code } });
+  assert.equal((await second(b, first.ticket, totpAt(secret, step))).status, 400, 'el código usado al activar no se reutiliza');
+  assert.equal((await second(b, `${first.ticket}x`, totpAt(secret, step + 1))).status, 400, 'ticket alterado');
+  assert.equal((await second(b, first.ticket, totpAt(secret, step + 1))).status, 200);
+  assert.equal((await b('/api/me')).status, 200);
+  const c = client(t.base);
+  const t2 = await login(c);
+  const viaRecovery = await (await second(c, t2.ticket, on.recovery_codes[0].toLowerCase())).json();
+  assert.equal(viaRecovery.used_recovery_code, true);
+  const d = client(t.base);
+  assert.equal((await second(d, (await login(d)).ticket, on.recovery_codes[0])).status, 400, 'cada código de recuperación sirve una vez');
+  assert.equal((await (await a('/api/seguridad')).json()).two_factor.recovery_left, 9);
+
+  // Sesiones: a, b y c abiertas; a cierra la de b y después todas las demás
+  sec = await (await a('/api/seguridad')).json();
+  assert.equal(sec.sessions.length, 3);
+  const others = sec.sessions.filter((s) => !s.current);
+  assert.equal((await a(`/api/seguridad/sesiones/${others[0].id}`, { method: 'DELETE' })).status, 200);
+  assert.equal((await a('/api/seguridad/sesiones/zzzz', { method: 'DELETE' })).status, 404);
+  const stillOpen = [(await b('/api/me')).status, (await c('/api/me')).status].sort();
+  assert.deepEqual(stillOpen, [200, 401]);
+  assert.equal((await (await a('/api/seguridad/sesiones/cerrar-otras', { method: 'POST' })).json()).closed, 1);
+  assert.equal((await b('/api/me')).status, 401);
+  assert.equal((await c('/api/me')).status, 401);
+  assert.equal((await a('/api/me')).status, 200, 'la sesión actual sigue abierta');
+
+  // Contraseña
+  assert.equal((await a('/api/seguridad/contrasena', { method: 'POST', body: { current_password: 'mal', new_password: 'clave-nueva-12345' } })).status, 400);
+  assert.equal((await a('/api/seguridad/contrasena', { method: 'POST', body: { current_password: 'clave-segura-1234', new_password: 'corta' } })).status, 400);
+  assert.equal((await a('/api/seguridad/contrasena', { method: 'POST', body: { current_password: 'clave-segura-1234', new_password: 'clave-nueva-12345' } })).status, 200);
+  assert.equal((await client(t.base)('/api/auth/ingresar', { method: 'POST', body: { email, password: 'clave-segura-1234' } })).status, 401, 'la contraseña vieja ya no sirve');
+
+  // Desactivar (contraseña + código de recuperación)
+  assert.equal((await a('/api/seguridad/dos-pasos/desactivar', { method: 'POST', body: { password: 'clave-segura-1234', code: on.recovery_codes[1] } })).status, 400);
+  assert.equal((await a('/api/seguridad/dos-pasos/desactivar', { method: 'POST', body: { password: 'clave-nueva-12345', code: on.recovery_codes[1] } })).status, 200);
+  const plain = await login(client(t.base), 'clave-nueva-12345');
+  assert.equal(plain.ok, true, 'sin dos pasos vuelve a entrar con la contraseña');
+
+  const types = (await (await a('/api/seguridad')).json()).events.map((e) => e.type);
+  for (const ty of ['two_factor_enabled', 'login', 'login_recovery_code', 'two_factor_failed', 'session_revoked', 'sessions_revoked', 'password_change_failed', 'password_changed', 'login_failed', 'two_factor_disabled']) {
+    assert.ok(types.includes(ty), `registro de actividad: ${ty}`);
+  }
 });

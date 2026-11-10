@@ -13,6 +13,7 @@ import * as attachments from './services/attachments.js';
 import * as contacts from './services/contacts.js';
 import * as folders from './services/folders.js';
 import * as teams from './services/teams.js';
+import * as accountSecurity from './services/security.js';
 import * as env from './services/envelopes.js';
 import * as templatesSvc from './services/templates.js';
 import * as webhooks from './services/webhooks.js';
@@ -93,14 +94,23 @@ export function createApp({ pool, config, mailer }) {
   app.use(
     asyncRoute(async (req, res, next) => {
       req.user = null;
+      req.sessionHash = null;
       const sid = parseCookies(req.headers.cookie).ds_session;
       if (sid && sid.length < 200) {
+        const hash = hmac(config.sessionSecret, sid);
         const { rows } = await pool.query(
-          `SELECT u.id, u.name, u.email, u.company, u.plan FROM sessions s JOIN users u ON u.id = s.user_id
+          `SELECT u.id, u.name, u.email, u.company, u.plan, s.last_seen_at FROM sessions s JOIN users u ON u.id = s.user_id
             WHERE s.id_hash = $1 AND s.expires_at > now()`,
-          [hmac(config.sessionSecret, sid)],
+          [hash],
         );
-        req.user = rows[0] || null;
+        if (rows[0]) {
+          const { last_seen_at: seen, ...user } = rows[0];
+          req.user = user;
+          req.sessionHash = hash;
+          if (!seen || Date.now() - new Date(seen).getTime() > 5 * 60_000) {
+            pool.query('UPDATE sessions SET last_seen_at = now() WHERE id_hash = $1', [hash]).catch(() => {});
+          }
+        }
       }
       next();
     }),
@@ -126,9 +136,13 @@ export function createApp({ pool, config, mailer }) {
     res.redirect(302, `/ingresar?next=${encodeURIComponent(req.originalUrl)}`);
   };
 
-  async function startSession(res, userId) {
+  async function startSession(res, userId, req) {
     const sid = randomToken();
-    await pool.query(`INSERT INTO sessions (id_hash, user_id, expires_at) VALUES ($1, $2, now() + interval '${SESSION_DAYS} days')`, [hmac(config.sessionSecret, sid), userId]);
+    const meta = clientMeta(req);
+    await pool.query(
+      `INSERT INTO sessions (id_hash, user_id, expires_at, ip, user_agent, last_seen_at) VALUES ($1, $2, now() + interval '${SESSION_DAYS} days', $3, $4, now())`,
+      [hmac(config.sessionSecret, sid), userId, meta.ip, meta.userAgent],
+    );
     res.cookie('ds_session', sid, { httpOnly: true, secure: config.secureCookies, sameSite: 'lax', path: '/', maxAge: SESSION_DAYS * 86400_000 });
   }
 
@@ -245,6 +259,31 @@ export function createApp({ pool, config, mailer }) {
   app.put('/api/contactos/:id', requireUser, json, asyncRoute(async (req, res) => res.json(await contacts.updateContact(ctx, req.user.id, req.params.id, req.body))));
   app.delete('/api/contactos/:id', requireUser, asyncRoute(async (req, res) => res.json(await contacts.deleteContact(ctx, req.user.id, req.params.id))));
 
+  // ---------- API del panel: seguridad de la cuenta ----------
+  app.get('/api/seguridad', requireUser, asyncRoute(async (req, res) => {
+    const [twoFactor, sessions, events] = await Promise.all([
+      accountSecurity.twoFactorStatus(ctx, req.user.id),
+      accountSecurity.listSessions(ctx, req.user.id, req.sessionHash),
+      accountSecurity.listEvents(ctx, req.user.id),
+    ]);
+    res.json({ two_factor: twoFactor, sessions, events });
+  }));
+  app.post('/api/seguridad/contrasena', requireUser, json, asyncRoute(async (req, res) => {
+    limit(`pwd:${req.user.id}`, 10, 900_000);
+    res.json(await accountSecurity.changePassword(ctx, req.user.id, req.body, req.sessionHash, clientMeta(req)));
+  }));
+  app.delete('/api/seguridad/sesiones/:id', requireUser, asyncRoute(async (req, res) => res.json(await accountSecurity.revokeSession(ctx, req.user.id, req.params.id, clientMeta(req)))));
+  app.post('/api/seguridad/sesiones/cerrar-otras', requireUser, asyncRoute(async (req, res) => res.json(await accountSecurity.revokeOtherSessions(ctx, req.user.id, req.sessionHash, clientMeta(req)))));
+  app.post('/api/seguridad/dos-pasos/iniciar', requireUser, asyncRoute(async (req, res) => res.json(await accountSecurity.startTwoFactor(ctx, req.user))));
+  app.post('/api/seguridad/dos-pasos/activar', requireUser, json, asyncRoute(async (req, res) => {
+    limit(`2fa-setup:${req.user.id}`, 20, 900_000);
+    res.json(await accountSecurity.enableTwoFactor(ctx, req.user.id, req.body.code, clientMeta(req)));
+  }));
+  app.post('/api/seguridad/dos-pasos/desactivar', requireUser, json, asyncRoute(async (req, res) => {
+    limit(`2fa-setup:${req.user.id}`, 20, 900_000);
+    res.json(await accountSecurity.disableTwoFactor(ctx, req.user.id, req.body, clientMeta(req)));
+  }));
+
   // ---------- API del panel: cuenta y marca ----------
   const logoBody = express.raw({ type: ['image/png', 'image/jpeg'], limit: '250kb' });
   app.get('/api/ajustes', requireUser, asyncRoute(async (req, res) => res.json(await account.getSettings(ctx, req.user.id))));
@@ -325,7 +364,8 @@ export function createApp({ pool, config, mailer }) {
         [email, name, company, await hashPassword(password), plan],
       );
       if (!rows[0]) throw new HttpError(409, 'Ya existe una cuenta con ese email. Ingresá con tu contraseña.', 'exists');
-      await startSession(res, rows[0].id);
+      await startSession(res, rows[0].id, req);
+      await accountSecurity.recordEvent(pool, rows[0].id, 'signup', clientMeta(req));
       res.status(201).json({ ok: true });
     }),
   );
@@ -337,14 +377,25 @@ export function createApp({ pool, config, mailer }) {
       const email = cleanEmail(req.body.email);
       limit(`login:${clientMeta(req).ip}`, 20, 900_000);
       limit(`login:${email}`, 8, 900_000);
-      const { rows } = await pool.query('SELECT id, password_hash FROM users WHERE email = $1', [email]);
+      const { rows } = await pool.query('SELECT id, password_hash, totp_enabled_at FROM users WHERE email = $1', [email]);
       const password = typeof req.body.password === 'string' ? req.body.password.slice(0, 200) : '';
       const ok = rows[0] ? await verifyPassword(password, rows[0].password_hash) : await verifyPassword(password, 'scrypt$16384$AAAAAAAAAAAAAAAAAAAAAA==$AAAA');
+      if (rows[0] && !ok) await accountSecurity.recordEvent(pool, rows[0].id, 'login_failed', clientMeta(req));
       if (!rows[0] || !ok) throw new HttpError(401, 'Email o contraseña incorrectos.', 'bad_credentials');
-      await startSession(res, rows[0].id);
+      if (rows[0].totp_enabled_at) return res.json({ two_factor: true, ticket: accountSecurity.loginTicket(ctx, rows[0].id) });
+      await startSession(res, rows[0].id, req);
+      await accountSecurity.recordEvent(pool, rows[0].id, 'login', clientMeta(req));
       res.json({ ok: true });
     }),
   );
+
+  app.post('/api/auth/dos-pasos', json, asyncRoute(async (req, res) => {
+    limit(`2fa:${clientMeta(req).ip}`, 20, 900_000);
+    limit(`2fa:${String(req.body.ticket || '').slice(0, 60)}`, 6, 900_000);
+    const { userId, usedRecovery } = await accountSecurity.completeLogin(ctx, req.body.ticket, req.body.code, clientMeta(req));
+    await startSession(res, userId, req);
+    res.json({ ok: true, used_recovery_code: usedRecovery });
+  }));
 
   app.post(
     '/api/auth/salir',

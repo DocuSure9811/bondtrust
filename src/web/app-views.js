@@ -278,8 +278,21 @@ export function settingsPage(config, user) {
     <button class="btn btn-ghost btn-sm" type="button" id="logo-delete" hidden>Quitar logo</button>
   </section>
   <section class="card"><h2>Plan</h2><p id="plan-info" class="muted">Cargando…</p><a class="link-strong" href="/precios">Ver planes</a></section>
+  <section class="card" id="seguridad"><h2>Verificación en dos pasos</h2><div id="tfa"><p class="muted">Cargando…</p></div></section>
+  <section class="card"><h2>Cambiar contraseña</h2>
+    <form id="pwd-form" novalidate>
+      <label>Contraseña actual<input name="current_password" type="password" autocomplete="current-password" maxlength="200" required></label>
+      <label>Nueva contraseña <span class="muted">(mínimo 10 caracteres)</span><input name="new_password" type="password" autocomplete="new-password" minlength="10" maxlength="200" required></label>
+      <p class="form-error" role="alert" id="pwd-msg"></p>
+      <button class="btn btn-primary" type="submit">Cambiar contraseña</button>
+      <p class="muted small">Al cambiarla se cierran tus otras sesiones abiertas.</p>
+    </form>
+  </section>
+  <section class="card"><div class="card-head"><h2>Sesiones abiertas</h2><button class="btn btn-ghost btn-sm" type="button" id="close-others">Cerrar las demás</button></div>
+    <p class="form-error" role="alert" id="sess-msg"></p><ul class="rlist" id="sessions"></ul></section>
+  <section class="card"><h2>Actividad de la cuenta</h2><p class="muted small">Últimos 50 movimientos de seguridad.</p><ul class="activity" id="activity"></ul></section>
 </div>`,
-    scripts: ['/static/settings.js'],
+    scripts: ['/static/settings.js', '/static/security.js'],
   });
 }
 
