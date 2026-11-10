@@ -8,7 +8,7 @@ let owner;
 before(async () => {
   t = await startTestApp();
   owner = client(t.base);
-  await owner('/api/auth/registro', { method: 'POST', body: { name: 'Vera Cinco', email: 'vera@example.com', password: 'clave-v05-larga' } });
+  await owner('/api/auth/registro', { method: 'POST', body: { name: 'Vera Cinco', email: 'vera@example.com', password: 'clave-v05-larga', plan: 'empresa' } });
 });
 after(async () => t.stop());
 
