@@ -2,7 +2,7 @@ import { PDFDocument } from 'pdf-lib';
 import { inspectPdf } from '../pdf/final.js';
 import { sha256Hex } from '../security.js';
 import { HttpError, cleanText } from '../validate.js';
-import { addEvent, assertSession, ownedEnvelope, resolveToken } from './envelopes.js';
+import { addEvent, assertSession, readableEnvelope, resolveToken } from './envelopes.js';
 
 export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const MAX_ATTACHMENT_PAGES = 20;
@@ -61,7 +61,7 @@ export async function listAttachments(db, envelopeId) {
 }
 
 export async function ownerAttachment(ctx, ownerId, envelopeId, attachmentId) {
-  await ownedEnvelope(ctx.pool, ownerId, envelopeId);
+  await readableEnvelope(ctx.pool, ownerId, envelopeId);
   if (!/^[0-9a-f-]{36}$/i.test(String(attachmentId))) throw new HttpError(404, 'Adjunto no encontrado.', 'not_found');
   const { rows: [a] } = await ctx.pool.query('SELECT name, content_type, data FROM attachments WHERE id = $1 AND envelope_id = $2', [attachmentId, envelopeId]);
   if (!a) throw new HttpError(404, 'Adjunto no encontrado.', 'not_found');

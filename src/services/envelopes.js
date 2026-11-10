@@ -7,6 +7,7 @@ import { hmac, maskEmail, newOtp, randomToken, safeEqualHex, sha256Hex } from '.
 import { HttpError, cleanEmail, cleanNumber, cleanPngDataUrl, cleanText } from '../validate.js';
 import { listAttachments } from './attachments.js';
 import { rememberRecipients } from './contacts.js';
+import { visibleOwnerIds } from './teams.js';
 import { VALIDATIONS, cleanFields, fieldsAsInput, insertFields, visibleFields } from './fields.js';
 import { emitEnvelopeEvent } from './webhooks.js';
 
@@ -343,21 +344,33 @@ export async function deleteDraft(ctx, ownerId, id) {
   return { ok: true };
 }
 
-export async function listEnvelopes(ctx, ownerId) {
+/** Sobres propios o, con scope "team" y rol de administrador, los de todo el equipo. */
+export async function listEnvelopes(ctx, ownerId, { scope = 'mine' } = {}) {
+  const owners = scope === 'team' ? await visibleOwnerIds(ctx.pool, ownerId) : [ownerId];
   const { rows } = await ctx.pool.query(
-    `SELECT e.id, e.title, e.status, e.created_at, e.sent_at, e.completed_at, e.folder_id,
+    `SELECT e.id, e.title, e.status, e.created_at, e.sent_at, e.completed_at, e.folder_id, e.owner_id, u.name AS owner_name,
             count(r.id) FILTER (WHERE r.role = 'signer')::int AS signers,
             count(r.id) FILTER (WHERE r.role = 'signer' AND r.status = 'signed')::int AS signed,
             coalesce(json_agg(json_build_object('name', r.name, 'email', r.email, 'role', r.role) ORDER BY r.position) FILTER (WHERE r.id IS NOT NULL), '[]') AS recipients
-       FROM envelopes e LEFT JOIN recipients r ON r.envelope_id = e.id
-      WHERE e.owner_id = $1 GROUP BY e.id ORDER BY e.created_at DESC LIMIT 2000`,
-    [ownerId],
+       FROM envelopes e JOIN users u ON u.id = e.owner_id LEFT JOIN recipients r ON r.envelope_id = e.id
+      WHERE e.owner_id = ANY($1::uuid[]) GROUP BY e.id, u.name ORDER BY e.created_at DESC LIMIT 2000`,
+    [owners],
   );
   return rows;
 }
 
+/** Lectura: el dueño o un administrador de su equipo. Las acciones siguen siendo solo del dueño. */
+export async function readableEnvelope(db, userId, id) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(id))) throw new HttpError(404, 'Sobre no encontrado.', 'not_found');
+  const owners = await visibleOwnerIds(db, userId);
+  const { rows: [row] } = await db.query('SELECT owner_id FROM envelopes WHERE id = $1 AND owner_id = ANY($2::uuid[])', [id, owners]);
+  if (!row) throw new HttpError(404, 'Sobre no encontrado.', 'not_found');
+  return ownedEnvelope(db, row.owner_id, id);
+}
+
 export async function envelopeDetail(ctx, ownerId, id) {
-  const env = await ownedEnvelope(ctx.pool, ownerId, id);
+  const env = await readableEnvelope(ctx.pool, ownerId, id);
+  const { rows: [ownerRow] } = await ctx.pool.query('SELECT name, email FROM users WHERE id = $1', [env.owner_id]);
   const { rows: recipients } = await ctx.pool.query(
     `SELECT id, name, email, role, routing_order, status, signed_at, declined_at, decline_reason, position
        FROM recipients WHERE envelope_id = $1 ORDER BY position`,
@@ -375,11 +388,11 @@ export async function envelopeDetail(ctx, ownerId, id) {
   );
   const { send_idempotency_key: _k, owner_id: _o, ...publicEnv } = env;
   const attachments = (await listAttachments(ctx.pool, id)).map(({ sha256: _s, ...a }) => a);
-  return { envelope: { ...publicEnv, documents: documentsOf(env) }, recipients, fields, events, attachments };
+  return { envelope: { ...publicEnv, documents: documentsOf(env), can_edit: env.owner_id === ownerId, owner_name: ownerRow.name, owner_email: ownerRow.email }, recipients, fields, events, attachments };
 }
 
 export async function ownerPdf(ctx, ownerId, id, which) {
-  await ownedEnvelope(ctx.pool, ownerId, id);
+  await readableEnvelope(ctx.pool, ownerId, id);
   const { rows } = await ctx.pool.query(
     `SELECT title, ${which === 'final' ? 'final_pdf' : 'original_pdf'} AS pdf FROM envelopes WHERE id = $1`,
     [id],

@@ -12,6 +12,7 @@ import * as account from './services/account.js';
 import * as attachments from './services/attachments.js';
 import * as contacts from './services/contacts.js';
 import * as folders from './services/folders.js';
+import * as teams from './services/teams.js';
 import * as env from './services/envelopes.js';
 import * as templatesSvc from './services/templates.js';
 import * as webhooks from './services/webhooks.js';
@@ -159,7 +160,7 @@ export function createApp({ pool, config, mailer }) {
     return out ? html(res, out) : next();
   });
 
-  const safeNext = (value) => (typeof value === 'string' && /^\/app(\/[\w/-]*)?(\?codigo=[A-Z0-9-]{9})?$/.test(value) ? value : '/app');
+  const safeNext = (value) => (typeof value === 'string' && /^\/app(\/[\w/-]*)?(\?(codigo=[A-Z0-9-]{9}|token=[A-Za-z0-9_-]{20,100}))?$/.test(value) ? value : '/app');
   app.get('/ingresar', (req, res) => (req.user ? res.redirect(302, safeNext(req.query.next)) : html(res, views.authPage(config, 'ingresar', { next: safeNext(req.query.next) }))));
   app.get('/registro', (req, res) => {
     if (req.user) return res.redirect(302, safeNext(req.query.next));
@@ -190,6 +191,8 @@ export function createApp({ pool, config, mailer }) {
   app.get('/app/plantillas', requirePageUser, (req, res) => html(res, views.templatesPage(config, req.user)));
   app.get('/app/ajustes', requirePageUser, (req, res) => html(res, views.settingsPage(config, req.user)));
   app.get('/app/contactos', requirePageUser, (req, res) => html(res, views.contactsPage(config, req.user)));
+  app.get('/app/equipo', requirePageUser, (req, res) => html(res, views.teamPage(config, req.user)));
+  app.get('/app/unirse', requirePageUser, (req, res) => html(res, views.joinPage(config, req.user)));
 
   // ---------- API del panel: corrección, vencimiento, firma en persona ----------
   app.post('/api/sobres/:id/corregir', requireUser, asyncRoute(async (req, res) => res.json(await env.correctEnvelope(ctx, req.user.id, req.params.id, clientMeta(req)))));
@@ -208,6 +211,26 @@ export function createApp({ pool, config, mailer }) {
     limit(`bulk:${req.user.id}`, 10, 3600_000);
     res.json(await templatesSvc.bulkSend(ctx, req.user, req.params.id, req.body.rows, clientMeta(req)));
   }));
+
+  // ---------- API del panel: equipo ----------
+  app.get('/api/equipo', requireUser, asyncRoute(async (req, res) => res.json(await teams.getTeam(ctx, req.user.id))));
+  app.post('/api/equipo', requireUser, json, asyncRoute(async (req, res) => res.status(201).json(await teams.createTeam(ctx, req.user.id, req.body))));
+  app.put('/api/equipo', requireUser, json, asyncRoute(async (req, res) => res.json(await teams.renameTeam(ctx, req.user.id, req.body))));
+  app.post('/api/equipo/invitaciones', requireUser, json, asyncRoute(async (req, res) => {
+    limit(`team-invite:${req.user.id}`, 100, 3600_000);
+    res.status(201).json(await teams.inviteMember(ctx, req.user, req.body));
+  }));
+  app.delete('/api/equipo/invitaciones/:id', requireUser, asyncRoute(async (req, res) => res.json(await teams.revokeInvite(ctx, req.user.id, req.params.id))));
+  app.get('/api/equipo/invitacion', requireUser, asyncRoute(async (req, res) => {
+    limit(`team-join:${req.user.id}`, 60, 3600_000);
+    res.json(await teams.inviteInfo(ctx, req.user, req.query.token));
+  }));
+  app.post('/api/equipo/unirse', requireUser, json, asyncRoute(async (req, res) => {
+    limit(`team-join:${req.user.id}`, 60, 3600_000);
+    res.json(await teams.acceptInvite(ctx, req.user, req.body.token));
+  }));
+  app.put('/api/equipo/miembros/:id', requireUser, json, asyncRoute(async (req, res) => res.json(await teams.changeRole(ctx, req.user.id, req.params.id, req.body.role))));
+  app.delete('/api/equipo/miembros/:id', requireUser, asyncRoute(async (req, res) => res.json(await teams.removeMember(ctx, req.user.id, req.params.id))));
 
   // ---------- API del panel: carpetas ----------
   app.get('/api/carpetas', requireUser, asyncRoute(async (req, res) => res.json({ data: await folders.listFolders(ctx, req.user.id) })));
@@ -338,12 +361,12 @@ export function createApp({ pool, config, mailer }) {
     requireUser,
     asyncRoute(async (req, res) => {
       const used = await env.monthlyUsage(pool, req.user.id);
-      res.json({ user: req.user, plan: { key: req.user.plan, ...planOf(req.user.plan) }, usage: { envelopesThisMonth: used } });
+      res.json({ user: req.user, plan: { key: req.user.plan, ...planOf(req.user.plan) }, usage: { envelopesThisMonth: used }, team: await teams.membershipOf(pool, req.user.id) });
     }),
   );
 
   // ---------- API: sobres ----------
-  app.get('/api/sobres', requireUser, asyncRoute(async (req, res) => res.json({ envelopes: await env.listEnvelopes(ctx, req.user.id) })));
+  app.get('/api/sobres', requireUser, asyncRoute(async (req, res) => res.json({ envelopes: await env.listEnvelopes(ctx, req.user.id, { scope: req.query.alcance === 'equipo' ? 'team' : 'mine' }) })));
   app.post(
     '/api/sobres',
     requireUser,

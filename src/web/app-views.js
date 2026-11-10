@@ -41,7 +41,7 @@ function appShell(config, user, { title, body, scripts, active = 'docs' }) {
   const shell = `<div class="app">
   <header class="app-header"><div class="wrap-app app-header-row">
     <a class="logo" href="/app" aria-label="DocSure, mis documentos">${LOGO_SVG}<span>DocSure</span></a>
-    <nav class="app-nav" aria-label="Aplicación"><a href="/app"${active === 'docs' ? ' aria-current="page"' : ''}>Documentos</a><a href="/app/nuevo"${active === 'new' ? ' aria-current="page"' : ''}>Nuevo sobre</a><a href="/app/plantillas"${active === 'tpl' ? ' aria-current="page"' : ''}>Plantillas</a><a href="/app/contactos"${active === 'contacts' ? ' aria-current="page"' : ''}>Contactos</a><a href="/app/api"${active === 'api' ? ' aria-current="page"' : ''}>API</a><a href="/app/ajustes"${active === 'settings' ? ' aria-current="page"' : ''}>Ajustes</a></nav>
+    <nav class="app-nav" aria-label="Aplicación"><a href="/app"${active === 'docs' ? ' aria-current="page"' : ''}>Documentos</a><a href="/app/nuevo"${active === 'new' ? ' aria-current="page"' : ''}>Nuevo sobre</a><a href="/app/plantillas"${active === 'tpl' ? ' aria-current="page"' : ''}>Plantillas</a><a href="/app/contactos"${active === 'contacts' ? ' aria-current="page"' : ''}>Contactos</a><a href="/app/equipo"${active === 'team' ? ' aria-current="page"' : ''}>Equipo</a><a href="/app/api"${active === 'api' ? ' aria-current="page"' : ''}>API</a><a href="/app/ajustes"${active === 'settings' ? ' aria-current="page"' : ''}>Ajustes</a></nav>
     <div class="app-user"><span class="app-user-name">${escapeHtml(user.name)}</span><button class="btn btn-ghost btn-sm" type="button" id="logout">Salir</button></div>
   </div></header>
   ${body}
@@ -234,6 +234,24 @@ export function contactsPage(config, user) {
   </section>
 </div>`,
     scripts: ['/static/contacts.js'],
+  });
+}
+
+export function teamPage(config, user) {
+  return appShell(config, user, {
+    title: 'Equipo',
+    active: 'team',
+    body: `<div class="wrap-app app-main" id="team-root" aria-live="polite"><p class="muted">Cargando…</p></div>`,
+    scripts: ['/static/team.js'],
+  });
+}
+
+export function joinPage(config, user) {
+  return appShell(config, user, {
+    title: 'Unirme a un equipo',
+    active: 'team',
+    body: `<div class="wrap-app app-main"><div class="sign-card" id="join"><p class="muted">Cargando…</p></div></div>`,
+    scripts: ['/static/join.js'],
   });
 }
 

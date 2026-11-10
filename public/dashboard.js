@@ -7,7 +7,9 @@ const tabs = [...document.querySelectorAll('#filters [data-filter]')];
 let envelopes = [];
 let folders = [];
 let filter = 'all';
+let scope = 'mine';
 const selected = new Set();
+let me = null;
 
 const folderName = (id) => folders.find((f) => f.id === id)?.name || '';
 
@@ -39,12 +41,14 @@ function render() {
     return;
   }
   list.innerHTML = rows.map((e) => {
-    const href = e.status === 'draft' ? `/app/nuevo?id=${e.id}` : `/app/sobres/${e.id}`;
+    const mine = e.owner_id === me.user.id;
+    const href = e.status === 'draft' && mine ? `/app/nuevo?id=${e.id}` : `/app/sobres/${e.id}`;
     const people = e.recipients.map((r) => r.name).join(', ');
     const progress = e.status === 'draft' ? 'Borrador sin enviar' : `${e.signed} de ${e.signers} firmas`;
-    const folder = e.folder_id ? `<span class="folder-tag">${esc(folderName(e.folder_id))}</span>` : '';
-    return `<div class="env-item"><input type="checkbox" class="env-check" data-id="${e.id}" aria-label="Seleccionar ${esc(e.title)}"${selected.has(e.id) ? ' checked' : ''}>
-      <a class="env-row" href="${href}"><div><h2>${esc(e.title)} ${folder}</h2><p>${progress}${people ? ` · ${esc(people)}` : ''}</p></div>
+    const folder = e.folder_id && mine ? `<span class="folder-tag">${esc(folderName(e.folder_id))}</span>` : '';
+    const by = mine ? '' : `<span class="owner-tag">${esc(e.owner_name)}</span>`;
+    return `<div class="env-item">${mine ? `<input type="checkbox" class="env-check" data-id="${e.id}" aria-label="Seleccionar ${esc(e.title)}"${selected.has(e.id) ? ' checked' : ''}>` : '<span></span>'}
+      <a class="env-row" href="${href}"><div><h2>${esc(e.title)} ${folder}${by}</h2><p>${progress}${people ? ` · ${esc(people)}` : ''}</p></div>
       <span class="env-date muted small">${fmtDate(e.completed_at || e.sent_at || e.created_at)}</span>${pill(e.status)}</a></div>`;
   }).join('');
 }
@@ -68,7 +72,7 @@ function renderBulk() {
 }
 
 async function reload() {
-  [envelopes, folders] = await Promise.all([api('/api/sobres').then((d) => d.envelopes), api('/api/carpetas').then((d) => d.data)]);
+  [envelopes, folders] = await Promise.all([api(`/api/sobres${scope === 'team' ? '?alcance=equipo' : ''}`).then((d) => d.envelopes), api('/api/carpetas').then((d) => d.data)]);
   for (const id of [...selected]) if (!envelopes.some((e) => e.id === id)) selected.delete(id);
   renderFolders();
   render();
@@ -145,9 +149,9 @@ function csvCell(value) {
 }
 const isoDay = (d) => (d ? new Date(d).toISOString().replace('T', ' ').slice(0, 16) : '');
 $('export').addEventListener('click', () => {
-  const header = ['ID', 'Documento', 'Estado', 'Carpeta', 'Creado (UTC)', 'Enviado (UTC)', 'Completado (UTC)', 'Firmas', 'Destinatarios'];
+  const header = ['ID', 'Documento', 'Estado', 'Carpeta', 'Remitente', 'Creado (UTC)', 'Enviado (UTC)', 'Completado (UTC)', 'Firmas', 'Destinatarios'];
   const lines = visible().map((e) => [
-    e.id, e.title, STATUS[e.status] || e.status, folderName(e.folder_id), isoDay(e.created_at), isoDay(e.sent_at), isoDay(e.completed_at),
+    e.id, e.title, STATUS[e.status] || e.status, e.owner_id === me.user.id ? folderName(e.folder_id) : '', e.owner_name, isoDay(e.created_at), isoDay(e.sent_at), isoDay(e.completed_at),
     `${e.signed}/${e.signers}`, e.recipients.map((r) => `${r.name} <${r.email}>${r.role === 'cc' ? ' (copia)' : ''}`).join(', '),
   ]);
   const csv = `﻿${[header, ...lines].map((row) => row.map(csvCell).join(';')).join('\r\n')}`;
@@ -159,7 +163,15 @@ $('export').addEventListener('click', () => {
 });
 
 try {
-  const me = await api('/api/me');
+  me = await api('/api/me');
+  if (me.team?.role === 'admin') {
+    $('q').insertAdjacentHTML('beforebegin', '<label class="visually-hidden" for="scope">Qué sobres ver</label><select id="scope"><option value="mine">Mis sobres</option><option value="team">Todo el equipo</option></select>');
+    $('scope').addEventListener('change', async (ev) => {
+      scope = ev.target.value;
+      selected.clear();
+      await reload();
+    });
+  }
   await reload();
   const pending = envelopes.filter((e) => e.status === 'sent').length;
   const done = envelopes.filter((e) => e.status === 'completed').length;

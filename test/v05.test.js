@@ -389,3 +389,101 @@ test('carpetas: crear, renombrar, mover, filtrar y borrar sin perder sobres', as
   assert.ok(after, 'el sobre sigue existiendo');
   assert.equal(after.folder_id, null, 'queda sin carpeta');
 });
+
+// ---------- Equipos y roles ----------
+
+async function newUser(name, email) {
+  const c = client(t.base);
+  await c('/api/auth/registro', { method: 'POST', body: { name, email, password: 'clave-equipo-larga', plan: 'empresa' } });
+  const id = (await (await c('/api/me')).json()).user.id;
+  return { c, id, email };
+}
+
+test('equipos: invitar, aceptar, roles, plantillas compartidas y vista de administrador', async () => {
+  const ana = await newUser('Ana Admin', 'ana-team@example.com');
+  const beto = await newUser('Beto Miembro', 'beto-team@example.com');
+  const caro = await newUser('Caro Externa', 'caro-team@example.com');
+  const dani = await newUser('Dani Dos', 'dani-team@example.com');
+
+  assert.equal((await (await beto.c('/api/equipo')).json()).team, null);
+  assert.equal((await ana.c('/api/equipo', { method: 'POST', body: { name: 'Comercial' } })).status, 201);
+  assert.equal((await ana.c('/api/equipo', { method: 'POST', body: { name: 'Otro' } })).status, 409, 'un equipo por persona');
+
+  const inv = await (await ana.c('/api/equipo/invitaciones', { method: 'POST', body: { email: 'BETO-team@example.com', role: 'member' } })).json();
+  assert.match(inv.url, /\/app\/unirse\?token=/);
+  const token = new URL(inv.url).searchParams.get('token');
+  const { rows: [mail] } = await t.pool.query(`SELECT subject FROM emails WHERE kind = 'team_invite' AND to_email = 'beto-team@example.com'`);
+  assert.match(mail.subject, /Comercial/);
+
+  assert.equal((await (await caro.c(`/api/equipo/invitacion?token=${token}`)).json()).matches, false);
+  assert.equal((await caro.c('/api/equipo/unirse', { method: 'POST', body: { token } })).status, 403, 'la invitación es para otro email');
+  assert.equal((await beto.c('/api/equipo/unirse', { method: 'POST', body: { token: 'x'.repeat(30) } })).status, 404);
+  assert.equal((await beto.c('/api/equipo/unirse', { method: 'POST', body: { token } })).status, 200);
+  assert.equal((await beto.c('/api/equipo/unirse', { method: 'POST', body: { token } })).status, 410, 'un solo uso');
+  assert.equal((await beto.c('/api/equipo/invitaciones', { method: 'POST', body: { email: 'x@example.com' } })).status, 403, 'un miembro no invita');
+  assert.equal((await ana.c('/api/equipo/invitaciones', { method: 'POST', body: { email: 'beto-team@example.com' } })).status, 409, 'ya es miembro');
+
+  const invD = await (await ana.c('/api/equipo/invitaciones', { method: 'POST', body: { email: 'dani-team@example.com', role: 'admin' } })).json();
+  await t.pool.query(`UPDATE team_invites SET expires_at = now() - interval '1 minute' WHERE id = $1`, [invD.id]);
+  assert.equal((await dani.c('/api/equipo/unirse', { method: 'POST', body: { token: new URL(invD.url).searchParams.get('token') } })).status, 410, 'invitación vencida');
+  const invD2 = await (await ana.c('/api/equipo/invitaciones', { method: 'POST', body: { email: 'dani-team@example.com', role: 'admin' } })).json();
+  assert.equal((await dani.c('/api/equipo/unirse', { method: 'POST', body: { token: new URL(invD2.url).searchParams.get('token') } })).status, 200);
+
+  const team = await (await ana.c('/api/equipo')).json();
+  assert.deepEqual(team.members.map((m) => [m.email, m.role]).sort(), [['ana-team@example.com', 'admin'], ['beto-team@example.com', 'member'], ['dani-team@example.com', 'admin']]);
+  assert.deepEqual((await (await beto.c('/api/equipo')).json()).invites, [], 'un miembro no ve invitaciones');
+
+  // Sobre y plantilla de Beto
+  const { id: envB } = await (await beto.c('/api/sobres?title=Cotizacion%20Beto', { method: 'POST', body: await samplePdf() })).json();
+  await beto.c(`/api/sobres/${envB}`, { method: 'PUT', body: { title: 'Cotizacion Beto', recipients: [{ key: 'a', name: 'Cliente Beto', email: 'cliente-beto@example.com' }], fields: [{ recipientKey: 'a', type: 'signature', page: 1, x: 0.1, y: 0.1, w: 0.3, h: 0.06 }] } });
+  assert.equal((await beto.c(`/api/sobres/${envB}/enviar`, { method: 'POST', headers: { 'idempotency-key': `b-${envB}` } })).status, 200);
+  const tplB = await (await beto.c('/api/plantillas', { method: 'POST', body: { envelopeId: envB, name: 'Cotización estándar' } })).json();
+
+  const anaTpls = (await (await ana.c('/api/plantillas')).json()).data;
+  const shared = anaTpls.find((x) => x.id === tplB.id);
+  assert.ok(shared, 'la plantilla del compañero se ve');
+  assert.equal(shared.mine, false);
+  assert.equal(shared.owner_name, 'Beto Miembro');
+  assert.equal(shared.can_delete, true, 'un admin puede borrarla');
+  assert.equal((await ana.c(`/api/plantillas/${tplB.id}/usar`, { method: 'POST', body: { recipients: [{ name: 'Cliente Ana', email: 'cliente-ana@example.com' }] } })).status, 201, 'se usa la plantilla del equipo');
+  assert.equal((await (await caro.c('/api/plantillas')).json()).data.length, 0, 'fuera del equipo no se ve');
+  assert.equal((await caro.c(`/api/plantillas/${tplB.id}/usar`, { method: 'POST', body: { recipients: [{ name: 'X', email: 'x@example.com' }] } })).status, 404);
+
+  // Vista de administrador: lectura sí, acciones no
+  const teamList = (await (await ana.c('/api/sobres?alcance=equipo')).json()).envelopes;
+  const seen = teamList.find((e) => e.id === envB);
+  assert.equal(seen.owner_name, 'Beto Miembro');
+  assert.equal((await (await ana.c('/api/sobres')).json()).envelopes.some((e) => e.id === envB), false, 'por defecto solo los propios');
+  assert.equal((await (await beto.c('/api/sobres?alcance=equipo')).json()).envelopes.every((e) => e.owner_id === beto.id), true, 'un miembro solo ve los suyos');
+  const detail = await (await ana.c(`/api/sobres/${envB}`)).json();
+  assert.equal(detail.envelope.can_edit, false);
+  assert.equal(detail.envelope.owner_name, 'Beto Miembro');
+  assert.equal((await ana.c(`/api/sobres/${envB}/original.pdf`)).status, 200);
+  assert.equal((await ana.c(`/api/sobres/${envB}/anular`, { method: 'POST' })).status, 404, 'el admin no actúa sobre sobres ajenos');
+  assert.equal((await caro.c(`/api/sobres/${envB}`)).status, 404);
+  assert.equal((await (await beto.c(`/api/sobres/${envB}`)).json()).envelope.can_edit, true);
+
+  // API v1
+  const { key } = await (await ana.c('/api/claves', { method: 'POST', body: { name: 'team' } })).json();
+  const v1team = await (await fetch(`${t.base}/api/v1/team`, { headers: { authorization: `Bearer ${key}` } })).json();
+  assert.equal(v1team.team.name, 'Comercial');
+  assert.equal(v1team.members.length, 3);
+  const v1list = await (await fetch(`${t.base}/api/v1/envelopes?scope=team`, { headers: { authorization: `Bearer ${key}` } })).json();
+  assert.ok(v1list.data.some((e) => e.id === envB));
+
+  // Roles y salidas
+  assert.equal((await ana.c(`/api/equipo/miembros/${dani.id}`, { method: 'PUT', body: { role: 'member' } })).status, 200);
+  assert.equal((await ana.c(`/api/equipo/miembros/${ana.id}`, { method: 'PUT', body: { role: 'member' } })).status, 400, 'queda al menos un admin');
+  assert.equal((await beto.c(`/api/equipo/miembros/${ana.id}`, { method: 'DELETE' })).status, 403);
+  assert.equal((await ana.c(`/api/equipo/miembros/${ana.id}`, { method: 'DELETE' })).status, 400, 'el último admin no sale sin reemplazo');
+  assert.equal((await ana.c(`/api/equipo/miembros/${beto.id}`, { method: 'PUT', body: { role: 'admin' } })).status, 200);
+  assert.equal((await ana.c(`/api/equipo/miembros/${ana.id}`, { method: 'DELETE' })).status, 200, 'sale con otro admin');
+  assert.equal((await (await ana.c('/api/equipo')).json()).team, null);
+  assert.equal((await ana.c(`/api/sobres/${envB}`)).status, 404, 'fuera del equipo ya no ve los sobres');
+  assert.equal((await beto.c(`/api/equipo/miembros/${dani.id}`, { method: 'DELETE' })).status, 200);
+  assert.equal((await beto.c(`/api/equipo/miembros/${beto.id}`, { method: 'DELETE' })).status, 200, 'el último miembro sale y el equipo se borra');
+  const { rows } = await t.pool.query(`SELECT count(*)::int AS n FROM teams WHERE name = 'Comercial'`);
+  assert.equal(rows[0].n, 0);
+  assert.equal((await (await beto.c(`/api/sobres/${envB}`)).json()).envelope.can_edit, true, 'el sobre sigue siendo de Beto');
+  assert.equal((await ana.c('/app/equipo')).status, 200);
+});

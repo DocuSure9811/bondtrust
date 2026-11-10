@@ -155,6 +155,20 @@ export const templates = {
       text: `${recipientName} rechazó "${title}". Motivo: ${reason}. Ver: ${url}`,
     };
   },
+  teamInvite({ inviterName, teamName, role, url }) {
+    const roleText = role === 'admin' ? 'administrador' : 'miembro';
+    return {
+      subject: `${inviterName} te invitó al equipo ${teamName} en DocSure`,
+      html: layout({
+        title: `Te invitaron a ${teamName}`,
+        intro: `<p><strong>${escapeHtml(inviterName)}</strong> te invitó a sumarte al equipo <strong>${escapeHtml(teamName)}</strong> en DocSure como ${roleText}.</p><p>Vas a poder usar las plantillas del equipo y seguir enviando tus documentos como siempre.</p>`,
+        buttonText: 'Unirme al equipo',
+        buttonUrl: url,
+        outro: 'La invitación vence en 7 días. Si no esperabas este email, ignoralo.',
+      }),
+      text: `${inviterName} te invitó al equipo ${teamName} en DocSure como ${roleText}. Unite acá: ${url} (vence en 7 días).`,
+    };
+  },
   expired({ ownerName, title, url }) {
     return {
       subject: `Vencido: ${title}`,

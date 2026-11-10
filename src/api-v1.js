@@ -3,6 +3,7 @@ import * as keys from './services/apikeys.js';
 import * as attachments from './services/attachments.js';
 import * as contacts from './services/contacts.js';
 import * as folders from './services/folders.js';
+import * as teams from './services/teams.js';
 import * as env from './services/envelopes.js';
 import * as templatesSvc from './services/templates.js';
 import * as hooks from './services/webhooks.js';
@@ -56,7 +57,7 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
   }));
 
   router.get('/envelopes', asyncRoute(async (req, res) => {
-    const list = await env.listEnvelopes(ctx, req.apiUser.id);
+    const list = await env.listEnvelopes(ctx, req.apiUser.id, { scope: req.query.scope === 'team' ? 'team' : 'mine' });
     const str = (v) => (typeof v === 'string' && v ? v : null);
     const status = str(req.query.status);
     const folder = str(req.query.folder_id);
@@ -135,6 +136,11 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
   router.post('/templates/:id/bulk', asyncRoute(async (req, res) => {
     limit(`bulk:${req.apiUser.id}`, 10, 3600_000);
     res.json(await templatesSvc.bulkSend(ctx, req.apiUser, req.params.id, req.body?.rows, clientMeta(req)));
+  }));
+
+  router.get('/team', asyncRoute(async (req, res) => {
+    const t = await teams.getTeam(ctx, req.apiUser.id);
+    res.json(t.team ? { team: t.team, role: t.role, members: t.members.map(({ id, name, email, role, joined_at: joinedAt }) => ({ id, name, email, role, joined_at: joinedAt })) } : { team: null });
   }));
 
   router.get('/folders', asyncRoute(async (req, res) => res.json({ data: await folders.listFolders(ctx, req.apiUser.id) })));

@@ -46,7 +46,8 @@ function say(text, ok = false) {
 
 async function load() {
   const [{ envelope: e, recipients, events, attachments }, { data: folders }] = await Promise.all([api(`/api/sobres/${id}`), api('/api/carpetas')]);
-  if (e.status === 'draft') return location.replace(`/app/nuevo?id=${id}`);
+  if (e.status === 'draft' && e.can_edit) return location.replace(`/app/nuevo?id=${id}`);
+  const edit = e.can_edit;
   const byId = new Map(recipients.map((r) => [r.id, r]));
   const canCorrect = ['sent', 'declined', 'expired', 'voided'].includes(e.status);
   document.title = `${e.title} | DocSure`;
@@ -55,14 +56,15 @@ async function load() {
     <div><a href="/app" class="small">← Mis documentos</a><h1>${esc(e.title)}</h1>${pill(e.status)}
       <span class="muted small"> Enviado ${fmtDate(e.sent_at, true)}${e.completed_at ? ` · Completado ${fmtDate(e.completed_at, true)}` : ''}${e.status === 'sent' && e.expires_at ? ` · Vence ${fmtDate(e.expires_at)}` : ''}</span>
       <p class="muted small">Idioma: ${LANG[e.language] || 'Español'} · ${e.reminder_days ? `Recordatorios cada ${e.reminder_days} día(s)` : 'Sin recordatorios'}${e.corrected_from ? ` · <a href="/app/sobres/${esc(e.corrected_from)}">Corrige un sobre anterior</a>` : ''}</p>
-      <label class="inline-select">Carpeta <select id="env-folder"><option value="">Sin carpeta</option>${folders.map((f) => `<option value="${f.id}"${f.id === e.folder_id ? ' selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label></div>
+      ${edit ? '' : `<p class="muted small">Enviado por <strong>${esc(e.owner_name)}</strong> (${esc(e.owner_email)}) · vista de administrador del equipo, solo lectura.</p>`}
+      <label class="inline-select"${edit ? '' : ' hidden'}>Carpeta <select id="env-folder"><option value="">Sin carpeta</option>${folders.map((f) => `<option value="${f.id}"${f.id === e.folder_id ? ' selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label></div>
     <div class="detail-actions">
       ${e.status === 'completed' ? '<button class="btn btn-primary" data-dl="final">Descargar firmado</button>' : ''}
       <button class="btn btn-ghost" data-dl="original">Descargar original</button>
-      ${e.status === 'sent' ? '<button class="btn btn-ghost" id="extend">Extender vencimiento</button>' : ''}
-      ${canCorrect ? '<button class="btn btn-ghost" id="correct">Corregir</button>' : ''}
-      <button class="btn btn-ghost" id="save-tpl">Guardar como plantilla</button>
-      ${e.status === 'sent' ? '<button class="btn btn-danger" id="void">Anular</button>' : ''}
+      ${edit && e.status === 'sent' ? '<button class="btn btn-ghost" id="extend">Extender vencimiento</button>' : ''}
+      ${edit && canCorrect ? '<button class="btn btn-ghost" id="correct">Corregir</button>' : ''}
+      ${edit ? '<button class="btn btn-ghost" id="save-tpl">Guardar como plantilla</button>' : ''}
+      ${edit && e.status === 'sent' ? '<button class="btn btn-danger" id="void">Anular</button>' : ''}
     </div>
   </div>
   <p class="form-error" role="alert" id="msg"></p>
@@ -71,7 +73,7 @@ async function load() {
       <li><div><strong>${esc(r.name)}</strong><small>${esc(r.email)} · ${r.role === 'cc' ? 'Recibe copia' : `Firmante${e.sequential ? ` · orden ${r.routing_order}` : ''}`}</small>
         ${r.decline_reason ? `<small>Motivo: “${esc(r.decline_reason)}”</small>` : ''}</div>
         <div class="tpl-actions">${r.role === 'signer' ? `<span class="status-pill status-${r.status === 'signed' ? 'completed' : r.status === 'declined' ? 'declined' : 'sent'}">${esc(RECIPIENT_STATUS[r.status])}</span>` : ''}
-        ${e.status === 'sent' && ['sent', 'viewed'].includes(r.status) ? `<button class="btn btn-ghost btn-sm" data-resend="${r.id}">Reenviar</button><button class="btn btn-ghost btn-sm" data-inperson="${r.id}">Firmar en persona</button>` : ''}</div></li>`).join('')}</ul>
+        ${edit && e.status === 'sent' && ['sent', 'viewed'].includes(r.status) ? `<button class="btn btn-ghost btn-sm" data-resend="${r.id}">Reenviar</button><button class="btn btn-ghost btn-sm" data-inperson="${r.id}">Firmar en persona</button>` : ''}</div></li>`).join('')}</ul>
       ${attachments.length ? `<h3 class="small-title">Archivos adjuntos</h3><ul class="rlist">${attachments.map((a) => `<li><div><strong>${esc(a.name)}</strong><small>${esc(a.label || 'Adjunto')} · ${esc(byId.get(a.recipient_id)?.name || '')} · ${Math.ceil(a.size / 1024)} KB</small></div><button class="btn btn-ghost btn-sm" data-attachment="${a.id}" data-name="${esc(a.name)}">Descargar</button></li>`).join('')}</ul>` : ''}
       ${e.final_sha256 ? `<p class="fine">Huella SHA-256 del documento final: <code class="hash">${esc(e.final_sha256)}</code></p>` : ''}
       <p class="fine">Huella SHA-256 del original: <code class="hash">${esc(e.original_sha256)}</code></p>

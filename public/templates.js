@@ -93,10 +93,10 @@ function render() {
   }
   list.innerHTML = templates.map((t) => {
     const single = t.roles.length === 1 && t.roles[0].role === 'signer';
-    return `<div class="env-row"><div><h2>${esc(t.name)}</h2><p>${t.roles.map((r) => esc(r.label)).join(', ')} · ${t.field_count} campos · ${t.page_count} pág. · ${fmtDate(t.created_at)}</p></div>
+    return `<div class="env-row"><div><h2>${esc(t.name)}${t.mine ? '' : ` <span class="owner-tag">De ${esc(t.owner_name)}</span>`}</h2><p>${t.roles.map((r) => esc(r.label)).join(', ')} · ${t.field_count} campos · ${t.page_count} pág. · ${fmtDate(t.created_at)}</p></div>
       <div class="tpl-actions"><button class="btn btn-primary btn-sm" data-use="${t.id}">Usar</button>
       ${single ? `<button class="btn btn-outline btn-sm" data-bulk="${t.id}">Envío masivo</button>` : ''}
-      <button class="btn btn-danger btn-sm" data-del="${t.id}">Eliminar</button></div><span></span></div>`;
+      ${t.can_delete ? `<button class="btn btn-danger btn-sm" data-del="${t.id}">Eliminar</button>` : ''}</div><span></span></div>`;
   }).join('');
   list.querySelectorAll('[data-use]').forEach((b) => b.addEventListener('click', () => useDialog(templates.find((t) => t.id === b.dataset.use))));
   list.querySelectorAll('[data-bulk]').forEach((b) => b.addEventListener('click', () => bulkDialog(templates.find((t) => t.id === b.dataset.bulk))));

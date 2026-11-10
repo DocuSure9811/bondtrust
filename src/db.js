@@ -221,6 +221,33 @@ CREATE TABLE IF NOT EXISTS folders (
 ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS folder_id uuid REFERENCES folders(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS envelopes_folder_idx ON envelopes (folder_id) WHERE folder_id IS NOT NULL;
 
+-- v0.5: equipos y roles
+CREATE TABLE IF NOT EXISTS teams (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  created_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS team_members (
+  team_id uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  role text NOT NULL CHECK (role IN ('admin', 'member')),
+  joined_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (team_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS team_invites (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  email text NOT NULL,
+  role text NOT NULL CHECK (role IN ('admin', 'member')),
+  token_hash text NOT NULL UNIQUE,
+  invited_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  expires_at timestamptz NOT NULL,
+  accepted_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS team_invites_team_idx ON team_invites (team_id);
+
 -- v0.5: contactos
 CREATE TABLE IF NOT EXISTS contacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

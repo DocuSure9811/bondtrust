@@ -1,5 +1,6 @@
 import { randomToken } from '../security.js';
 import { fieldsAsInput } from './fields.js';
+import { membershipOf, teammateIds } from './teams.js';
 import { HttpError, cleanText } from '../validate.js';
 import { createDraft, documentsOf, saveDraft, sendEnvelope } from './envelopes.js';
 
@@ -38,25 +39,33 @@ export async function saveTemplate(ctx, ownerId, envelopeId, name) {
   return tpl;
 }
 
+/** Plantillas propias y las de los compañeros de equipo. */
 export async function listTemplates(ctx, ownerId) {
+  const owners = await teammateIds(ctx.pool, ownerId);
+  const m = await membershipOf(ctx.pool, ownerId);
   const { rows } = await ctx.pool.query(
-    `SELECT id, name, page_count, roles, sequential, language, created_at,
-            jsonb_array_length(fields) AS field_count FROM templates WHERE owner_id = $1 ORDER BY created_at DESC`,
-    [ownerId],
+    `SELECT t.id, t.name, t.page_count, t.roles, t.sequential, t.language, t.created_at, t.owner_id, u.name AS owner_name,
+            jsonb_array_length(t.fields) AS field_count FROM templates t JOIN users u ON u.id = t.owner_id
+      WHERE t.owner_id = ANY($1::uuid[]) ORDER BY t.created_at DESC`,
+    [owners],
   );
-  return rows;
+  return rows.map(({ owner_id: o, ...t }) => ({ ...t, mine: o === ownerId, can_delete: o === ownerId || m?.role === 'admin' }));
 }
 
+/** Borra el dueño o un administrador del equipo. */
 export async function deleteTemplate(ctx, ownerId, id) {
   checkId(id);
-  const { rowCount } = await ctx.pool.query('DELETE FROM templates WHERE id = $1 AND owner_id = $2', [id, ownerId]);
+  const m = await membershipOf(ctx.pool, ownerId);
+  const owners = m?.role === 'admin' ? await teammateIds(ctx.pool, ownerId) : [ownerId];
+  const { rowCount } = await ctx.pool.query('DELETE FROM templates WHERE id = $1 AND owner_id = ANY($2::uuid[])', [id, owners]);
   if (!rowCount) throw new HttpError(404, 'Plantilla no encontrada.', 'not_found');
   return { ok: true };
 }
 
 async function getTemplate(ctx, ownerId, id) {
   checkId(id);
-  const { rows: [tpl] } = await ctx.pool.query('SELECT * FROM templates WHERE id = $1 AND owner_id = $2', [id, ownerId]);
+  const owners = await teammateIds(ctx.pool, ownerId);
+  const { rows: [tpl] } = await ctx.pool.query('SELECT * FROM templates WHERE id = $1 AND owner_id = ANY($2::uuid[])', [id, owners]);
   if (!tpl) throw new HttpError(404, 'Plantilla no encontrada.', 'not_found');
   return tpl;
 }
