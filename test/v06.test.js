@@ -141,5 +141,7 @@ test('documentos de imagen y detección de campos de formularios PDF', async () 
   const { rows: [env] } = await t.pool.query('SELECT status, final_pdf FROM envelopes WHERE id = $1', [id]);
   assert.equal(env.status, 'completed');
   const final = await PDFDocument.load(env.final_pdf);
-  assert.equal(final.getForm().getFields().length, 0, 'el formulario original queda aplanado');
+  const left = final.getForm().getFields().map((f) => f.getName());
+  assert.ok(!left.some((n) => ['Nombre completo', 'Acepto', 'Provincia', 'Plan'].includes(n)), `el formulario original queda aplanado (quedan: ${left})`);
+  assert.equal(left.length, 1, 'solo queda el campo del sello digital');
 });
