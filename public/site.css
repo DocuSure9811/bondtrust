@@ -467,7 +467,8 @@ dialog::backdrop { background: rgba(6, 38, 31, .55); }
 }
 .m-put { background: #b7791f; }
 .doc-list { margin: 4px 0 14px; }
-.sbox select { margin: 0; width: 100%; height: 100%; border: 0; border-radius: 0; padding: 0 4px; font-size: 12px; background: transparent; min-height: 0; }
+.sbox select { -webkit-appearance: none; appearance: none; margin: 0; width: 100%; height: 100%; border: 0; border-radius: 0; padding: 0 16px 0 4px; font-size: 12px; line-height: 1; min-height: 0; color: var(--ink); cursor: pointer;
+  background: linear-gradient(45deg, transparent 50%, var(--brand-700) 50%) right 8px center / 5px 5px no-repeat, linear-gradient(-45deg, transparent 50%, var(--brand-700) 50%) right 4px center / 5px 5px no-repeat; }
 .sbox.invalid { border-color: var(--danger); background: rgba(217, 48, 37, .08); }
 .fbox.conditional { border-style: dashed; }
 #prop-cond-wrap { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 4px; }
