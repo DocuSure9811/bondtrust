@@ -80,7 +80,7 @@ const MAX_PDF_BYTES = 15 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 25 * 1024 * 1024;
 const MAX_DOCUMENTS = 10;
 
-const docName = (name, fallback) => cleanText(String(name || fallback || '').replace(/\.(pdf|png|jpe?g)$/i, '').trim() || fallback, { max: 160, field: 'el nombre del documento' });
+const docName = (name, fallback) => cleanText(String(name || fallback || '').replace(/\.(pdf|png|jpe?g|docx?|odt|rtf)$/i, '').trim() || fallback, { max: 160, field: 'el nombre del documento' });
 
 /** Documentos del sobre; los sobres anteriores a v0.5 tienen uno solo implícito. */
 export function documentsOf(env) {

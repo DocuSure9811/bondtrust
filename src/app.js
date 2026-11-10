@@ -130,7 +130,7 @@ export function createApp({ pool, config, mailer }) {
 
   const json = express.json({ limit: '1.5mb' });
   const pdfBody = express.raw({ type: 'application/pdf', limit: '15mb' });
-  const docBody = express.raw({ type: ['application/pdf', 'image/png', 'image/jpeg'], limit: '15mb' });
+  const docBody = express.raw({ type: ['application/pdf', 'image/png', 'image/jpeg', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'application/vnd.oasis.opendocument.text', 'application/rtf', 'text/rtf'], limit: '15mb' });
 
   const requireUser = (req, res, next) => (req.user ? next() : next(new HttpError(401, 'Iniciá sesión.', 'auth')));
   const requirePageUser = (req, res, next) => {

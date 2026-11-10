@@ -3,7 +3,7 @@ import { after, before, test } from 'node:test';
 import { PDFDocument } from 'pdf-lib';
 import { evaluateFormula, parseNumber } from '../public/formula.js';
 import { sealFingerprint, verifySeal } from '../src/pdf/verify.js';
-import { PNG, client, codeFrom, linkFrom, outbox, samplePdf, startTestApp } from './helpers.js';
+import { PNG, client, codeFrom, linkFrom, outbox, sampleDocx, samplePdf, startTestApp } from './helpers.js';
 
 let t;
 let owner;
@@ -207,4 +207,21 @@ test('idiomas nuevos: francés, alemán e italiano en emails y firma', async () 
     const token = linkFrom((await outbox(t.pool, 'invite', email))[0]);
     assert.equal((await (await client(t.base)(`/api/firmar/${token}`)).json()).language, lang);
   }
+});
+
+test('Word: .docx se convierte a PDF; formatos viejos y ZIP falsos se rechazan', async () => {
+  const docx = sampleDocx('Cláusula primera: el contrato rige desde hoy. '.repeat(40));
+  const res = await owner('/api/sobres?title=Word&name=contrato.docx', { method: 'POST', body: docx, headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' } });
+  assert.equal(res.status, 201, await res.clone().text());
+  const { id, documents } = await res.json();
+  assert.equal(documents[0].name, 'contrato');
+  const pdf = Buffer.from(await (await owner(`/api/sobres/${id}/original.pdf`)).arrayBuffer());
+  assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+  assert.ok((await PDFDocument.load(pdf)).getPageCount() >= 1);
+  const oldDoc = Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(100)]);
+  const old = await owner('/api/sobres?title=x', { method: 'POST', body: oldDoc, headers: { 'content-type': 'application/msword' } });
+  assert.equal(old.status, 415);
+  assert.match((await old.json()).error, /docx/);
+  const fake = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(100)]);
+  assert.equal((await owner('/api/sobres?title=x', { method: 'POST', body: fake, headers: { 'content-type': 'application/msword' } })).status, 400, 'un ZIP que no es Word se rechaza');
 });

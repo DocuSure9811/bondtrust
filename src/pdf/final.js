@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { PDFCheckBox, PDFDocument, PDFDropdown, PDFOptionList, PDFRadioGroup, PDFSignature, PDFTextField, StandardFonts, rgb, degrees } from 'pdf-lib';
 import { HttpError } from '../validate.js';
+import { officeKind, officeToPdf } from './office.js';
 
 const require = createRequire(import.meta.url);
 const signpdfModule = require('@signpdf/signpdf');
@@ -35,13 +36,15 @@ export { MAX_PAGES };
 
 const A4 = [595.28, 841.89];
 
-/** Acepta PDF, PNG o JPG: una imagen se convierte en una página A4 (vertical u horizontal según la foto). */
+/** Acepta PDF, Word (docx, doc, odt, rtf), PNG o JPG: una imagen se convierte en una página A4 (vertical u horizontal según la foto). */
 export async function toPdf(bytes) {
   if (!bytes?.length) throw new HttpError(400, 'El archivo está vacío.', 'invalid_pdf');
   if (bytes.subarray(0, 5).toString('latin1') === '%PDF-') return bytes;
+  const office = officeKind(bytes);
+  if (office) return officeToPdf(bytes, office);
   const png = bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   const jpg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  if (!png && !jpg) throw new HttpError(400, 'Subí un PDF o una imagen PNG o JPG.', 'invalid_pdf');
+  if (!png && !jpg) throw new HttpError(400, 'Subí un PDF, un Word o una imagen PNG o JPG.', 'invalid_pdf');
   const doc = await PDFDocument.create();
   let image;
   try {

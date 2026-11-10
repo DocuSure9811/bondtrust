@@ -65,9 +65,10 @@ async function saveDraft() {
 }
 
 // ---------- Paso 1: documentos ----------
-const docName = (file) => file.name.replace(/\.(pdf|png|jpe?g)$/i, '').slice(0, 160) || 'Documento';
-const ACCEPTED = ['application/pdf', 'image/png', 'image/jpeg'];
-const typeOf = (file) => (ACCEPTED.includes(file.type) ? file.type : /\.pdf$/i.test(file.name) ? 'application/pdf' : /\.png$/i.test(file.name) ? 'image/png' : /\.jpe?g$/i.test(file.name) ? 'image/jpeg' : null);
+const docName = (file) => file.name.replace(/\.(pdf|png|jpe?g|docx?|odt|rtf)$/i, '').slice(0, 160) || 'Documento';
+const ACCEPTED = ['application/pdf', 'image/png', 'image/jpeg', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'application/vnd.oasis.opendocument.text', 'application/rtf', 'text/rtf'];
+const BY_EXT = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', doc: 'application/msword', odt: 'application/vnd.oasis.opendocument.text', rtf: 'application/rtf' };
+const typeOf = (file) => (ACCEPTED.includes(file.type) ? file.type : BY_EXT[(file.name.split('.').pop() || '').toLowerCase()] || null);
 
 function renderDocs() {
   const list = $('docs');
@@ -90,7 +91,7 @@ async function handleFiles(fileList) {
   const files = [...fileList];
   if (!files.length) return;
   for (const file of files) {
-    if (!typeOf(file)) return void (err.textContent = `${file.name} no es un PDF ni una imagen JPG o PNG.`);
+    if (!typeOf(file)) return void (err.textContent = `${file.name} no es un PDF, un Word ni una imagen JPG o PNG.`);
     if (file.size > 15 * 1024 * 1024) return void (err.textContent = `${file.name} supera 15 MB.`);
   }
   if (state.documents.length + files.length > 10) return void (err.textContent = 'Máximo 10 documentos por sobre.');
@@ -98,7 +99,8 @@ async function handleFiles(fileList) {
   const firstUpload = !state.id;
   try {
     for (const [n, file] of files.entries()) {
-      label.textContent = files.length > 1 ? `Subiendo ${n + 1} de ${files.length}…` : 'Subiendo…';
+      const word = !['application/pdf', 'image/png', 'image/jpeg'].includes(typeOf(file));
+      label.textContent = `${files.length > 1 ? `Subiendo ${n + 1} de ${files.length}` : 'Subiendo'}${word ? ' y convirtiendo el Word a PDF' : ''}…`;
       const bytes = await file.arrayBuffer();
       if (!state.id) {
         const title = $('title').value.trim() || docName(file);

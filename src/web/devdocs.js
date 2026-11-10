@@ -228,7 +228,7 @@ Usá el encabezado Idempotency-Key en POST /envelopes: si repetís la misma clav
 POST ${api}/envelopes
 Cuerpo JSON:
 - title (string, obligatorio, máx. 160)
-- document_base64 (string): el PDF en base64, máx. 15 MB, sin contraseña.
+- document_base64 (string): el documento en base64, máx. 15 MB, sin contraseña. Acepta PDF, Word (docx, doc, odt, rtf; se convierte a PDF) e imágenes PNG o JPG (una página).
 - documents (array, alternativa a document_base64): [{ "name", "document_base64" }] hasta 10 PDF que se unen en un solo sobre, en ese orden (máx. 25 MB y 200 páginas en total). Las páginas se numeran de corrido: si el primero tiene 3 páginas, la página 1 del segundo es la 4.
 - recipients (array, obligatorio): [{ "name", "email", "role": "signer" | "cc" (por defecto signer), "order": 1.. (solo si sequential) }]
 - fields (array, opcional): [{ "recipient": índice (desde 0) o email, "type", "page" (desde 1), "x", "y", "width", "height" (fracciones 0..1 de la página, origen arriba a la izquierda), "required" (bool), "label", "options" (select, radio, multiple), "validation" (textos), "formula" (number), "key" y "show_if" }]

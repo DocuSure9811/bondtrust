@@ -99,8 +99,8 @@ export function editorPage(config, user) {
     <h1>Subí los documentos</h1>
     <label>Nombre del sobre<input id="title" maxlength="160" placeholder="Ej.: Contrato de servicios"></label>
     <ul class="rlist doc-list" id="docs" hidden></ul>
-    <div class="dropzone" id="drop"><input id="file" type="file" accept="application/pdf,image/png,image/jpeg" multiple class="visually-hidden">
-      <label for="file" class="dropzone-label"><span class="ic ic-upload" aria-hidden="true"></span><strong id="drop-text">Elegí o arrastrá PDF o fotos</strong><span>PDF, JPG o PNG de hasta 15 MB · 10 documentos por sobre</span></label></div>
+    <div class="dropzone" id="drop"><input id="file" type="file" accept="application/pdf,image/png,image/jpeg,.docx,.doc,.odt,.rtf" multiple class="visually-hidden">
+      <label for="file" class="dropzone-label"><span class="ic ic-upload" aria-hidden="true"></span><strong id="drop-text">Elegí o arrastrá PDF, Word o fotos</strong><span>PDF, Word, JPG o PNG de hasta 15 MB · 10 documentos por sobre</span></label></div>
     <p class="form-error" role="alert" id="err1"></p>
     <div class="step-actions" id="step1-actions" hidden><span></span><button class="btn btn-primary" type="button" data-go="2">Siguiente: destinatarios</button></div>
   </section>
