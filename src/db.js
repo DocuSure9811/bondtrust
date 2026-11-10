@@ -311,7 +311,8 @@ CREATE TABLE IF NOT EXISTS emails (
 `;
 
 function sslFor(url) {
-  return new URL(url).hostname.includes('.render.com') ? { rejectUnauthorized: false } : undefined;
+  const host = new URL(url).hostname;
+  return host.includes('.render.com') || host.endsWith('.supabase.com') ? { rejectUnauthorized: false } : undefined;
 }
 
 export function createPool(url, { schema } = {}) {
