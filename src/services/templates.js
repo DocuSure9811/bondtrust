@@ -29,7 +29,7 @@ export async function saveTemplate(ctx, ownerId, envelopeId, name) {
     role: r.role,
     order: r.routing_order,
   }));
-  const { rows: fields } = await ctx.pool.query('SELECT id, recipient_id, type, page, x, y, w, h, required, label, options, validation, cond_field_id, cond_value FROM fields WHERE envelope_id = $1', [envelopeId]);
+  const { rows: fields } = await ctx.pool.query('SELECT id, recipient_id, type, page, x, y, w, h, required, label, options, validation, formula, cond_field_id, cond_value FROM fields WHERE envelope_id = $1', [envelopeId]);
   const tplFields = fieldsAsInput(fields, (f) => index.get(f.recipient_id)).map(({ recipientKey, ...f }) => ({ role: recipientKey, ...f }));
   const { rows: [tpl] } = await ctx.pool.query(
     `INSERT INTO templates (owner_id, name, message, sequential, language, pdf, page_count, roles, fields, documents)

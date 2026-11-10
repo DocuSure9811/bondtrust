@@ -8,6 +8,7 @@ import { HttpError, cleanEmail, cleanNumber, cleanPngDataUrl, cleanText } from '
 import { listAttachments } from './attachments.js';
 import { rememberRecipients } from './contacts.js';
 import { visibleOwnerIds } from './teams.js';
+import { evaluateFormula, formatNumber, parseNumber } from '../../public/formula.js';
 import { VALIDATIONS, cleanFields, fieldsAsInput, insertFields, visibleFields } from './fields.js';
 import { emitEnvelopeEvent } from './webhooks.js';
 
@@ -378,7 +379,7 @@ export async function envelopeDetail(ctx, ownerId, id) {
   );
   const { rows: fields } = await ctx.pool.query(
     `SELECT f.id, r.position AS recipient_index, f.type, f.page, f.x, f.y, f.w, f.h, f.required, f.label,
-            f.options, f.validation, f.cond_field_id, f.cond_value
+            f.options, f.validation, f.formula, f.cond_field_id, f.cond_value
        FROM fields f JOIN recipients r ON r.id = f.recipient_id WHERE f.envelope_id = $1`,
     [id],
   );
@@ -508,7 +509,7 @@ export async function signingFields(ctx, token, session) {
   const r = await resolveToken(ctx, token);
   assertSession(ctx, r, session);
   const { rows } = await ctx.pool.query(
-    'SELECT id, type, page, x, y, w, h, required, label, options, validation, cond_field_id, cond_value FROM fields WHERE recipient_id = $1 ORDER BY page, y, x',
+    'SELECT id, type, page, x, y, w, h, required, label, options, validation, formula, cond_field_id, cond_value FROM fields WHERE recipient_id = $1 ORDER BY page, y, x',
     [r.id],
   );
   const { rows: [env] } = await ctx.pool.query('SELECT title, page_count, original_sha256, documents FROM envelopes WHERE id = $1', [r.envelope_id]);
@@ -521,12 +522,27 @@ export async function signDocument(ctx, token, body, meta) {
   const { envelopeId, recipientId } = await withTransaction(ctx.pool, async (db) => {
     const r = await resolveToken(ctx, token, { forUpdate: true, db });
     assertSession(ctx, r, body.session);
-    const { rows: fields } = await db.query('SELECT id, type, required, options, validation, cond_field_id, cond_value FROM fields WHERE recipient_id = $1', [r.id]);
+    const { rows: fields } = await db.query('SELECT id, type, required, label, options, validation, formula, cond_field_id, cond_value FROM fields WHERE recipient_id = $1', [r.id]);
     const values = body.values && typeof body.values === 'object' ? body.values : {};
     const rawOf = (f) => {
       if (f.type === 'checkbox') return values[f.id] === true ? 'true' : 'false';
-      if (f.type === 'select' || f.type === 'text') return typeof values[f.id] === 'string' ? values[f.id].trim() : '';
+      if (['select', 'radio', 'text'].includes(f.type)) return typeof values[f.id] === 'string' ? values[f.id].trim() : '';
       return null;
+    };
+    // Números: lo escrito por el firmante o, si tienen fórmula, el cálculo del servidor (nunca el del navegador).
+    const numberByLabel = new Map(fields.filter((f) => f.type === 'number' && f.label).map((f) => [f.label.toLowerCase(), f]));
+    const numberCache = new Map();
+    const numberOf = (f) => {
+      if (numberCache.has(f.id)) return numberCache.get(f.id);
+      numberCache.set(f.id, 0);
+      let v;
+      if (f.formula) v = evaluateFormula(f.formula, (name) => (numberByLabel.has(name) ? numberOf(numberByLabel.get(name)) : 0));
+      else {
+        v = parseNumber(values[f.id]);
+        if (Number.isNaN(v)) throw new HttpError(400, `"${f.label || 'Un campo numérico'}" tiene que ser un número.`, 'validation');
+      }
+      numberCache.set(f.id, v);
+      return v;
     };
     const shown = visibleFields(fields, rawOf);
     const { rows: uploaded } = await db.query('SELECT field_id, name FROM attachments WHERE recipient_id = $1', [r.id]);
@@ -549,19 +565,32 @@ export async function signDocument(ctx, token, body, meta) {
         value = cleanText(values[f.id] ?? '', { max: 500, field: 'un campo de texto', required: f.required }) || null;
         const rule = value && f.validation ? VALIDATIONS[f.validation] : null;
         if (rule && !rule.re.test(value)) throw new HttpError(400, `Un campo de texto tiene que ser ${rule.message}.`, 'validation');
-      } else if (f.type === 'attachment') {
+      } else if (f.type === 'attachment' || f.type === 'image') {
         value = fileOf.get(f.id) || null;
-      } else if (f.type === 'select') {
+      } else if (f.type === 'select' || f.type === 'radio') {
         value = rawOf(f) || null;
         if (value && !(f.options || []).includes(value)) throw new HttpError(400, 'Elegí una opción válida de la lista.', 'validation');
+      } else if (f.type === 'multiple') {
+        const picked = Array.isArray(values[f.id]) ? [...new Set(values[f.id].map(String))] : [];
+        if (picked.some((p) => !(f.options || []).includes(p))) throw new HttpError(400, 'Elegí opciones válidas de la lista.', 'validation');
+        value = picked.length ? JSON.stringify((f.options || []).filter((o) => picked.includes(o))) : null;
+      } else if (f.type === 'number') {
+        const n = numberOf(f);
+        value = n === null ? null : formatNumber(n);
+      } else if (f.type === 'phone') {
+        value = cleanText(values[f.id] ?? '', { max: 30, field: 'el teléfono', required: f.required }) || null;
+        if (value && !VALIDATIONS.phone.re.test(value)) throw new HttpError(400, 'El teléfono no es válido.', 'validation');
+      } else if (f.type === 'stamp') {
+        const company = cleanText(values[f.id] ?? '', { max: 80, field: 'el nombre del sello', required: f.required });
+        value = company ? JSON.stringify({ company, name: r.name, date: signedOn }) : null;
       }
       if (!shown.has(f.id)) {
         await db.query('UPDATE fields SET value = NULL WHERE id = $1', [f.id]);
-        if (f.type === 'attachment') await db.query('DELETE FROM attachments WHERE field_id = $1', [f.id]);
+        if (f.type === 'attachment' || f.type === 'image') await db.query('DELETE FROM attachments WHERE field_id = $1', [f.id]);
         continue;
       }
       if (f.required && f.type === 'checkbox' && value !== 'true') throw new HttpError(400, 'Marcá todas las casillas obligatorias.', 'validation');
-      if (f.required && f.type === 'attachment' && !value) throw new HttpError(400, 'Falta subir un archivo adjunto obligatorio.', 'validation');
+      if (f.required && (f.type === 'attachment' || f.type === 'image') && !value) throw new HttpError(400, 'Falta subir un archivo obligatorio.', 'validation');
       if (f.required && !value && !AUTO_FIELDS.has(f.type)) throw new HttpError(400, 'Completá todos los campos obligatorios.', 'validation');
       await db.query('UPDATE fields SET value = $2 WHERE id = $1', [f.id, value]);
     }
@@ -627,11 +656,11 @@ export async function completeEnvelope(ctx, envelopeId) {
   if (!envelope || envelope.status !== 'sent') return;
   const { rows: [owner] } = await ctx.pool.query('SELECT id, name, email FROM users WHERE id = $1', [envelope.owner_id]);
   const { rows: recipients } = await ctx.pool.query('SELECT * FROM recipients WHERE envelope_id = $1 ORDER BY position', [envelopeId]);
-  const { rows: fields } = await ctx.pool.query('SELECT type, page, x, y, w, h, value FROM fields WHERE envelope_id = $1', [envelopeId]);
+  const { rows: fields } = await ctx.pool.query('SELECT id, type, page, x, y, w, h, value FROM fields WHERE envelope_id = $1', [envelopeId]);
   const { rows: events } = await ctx.pool.query('SELECT type, recipient_id, ip, created_at FROM events WHERE envelope_id = $1 ORDER BY id', [envelopeId]);
   const { rows: attachments } = await ctx.pool.query(
-    `SELECT a.name, a.content_type, a.data, a.sha256, a.size, r.name AS recipient_name, r.email AS recipient_email
-       FROM attachments a JOIN recipients r ON r.id = a.recipient_id WHERE a.envelope_id = $1 ORDER BY r.position, a.created_at`,
+    `SELECT a.field_id, f.type AS field_type, a.name, a.content_type, a.data, a.sha256, a.size, r.name AS recipient_name, r.email AS recipient_email
+       FROM attachments a JOIN recipients r ON r.id = a.recipient_id JOIN fields f ON f.id = a.field_id WHERE a.envelope_id = $1 ORDER BY r.position, a.created_at`,
     [envelopeId],
   );
   const completedAt = new Date();
@@ -779,7 +808,7 @@ export async function createFromApi(ctx, owner, body, idempotencyKey, meta) {
         if (idx < 0 || idx >= recipients.length) throw new HttpError(400, 'Cada campo debe indicar "recipient" (índice o email de un destinatario).', 'validation');
         return {
           key: f.key, recipientKey: `r${idx}`, type: f.type, page: f.page, x: f.x, y: f.y, w: f.width, h: f.height, required: f.required, label: f.label,
-          options: f.options, validation: f.validation, showIf: f.show_if ? { key: f.show_if.field, equals: f.show_if.equals } : null,
+          options: f.options, validation: f.validation, formula: f.formula, showIf: f.show_if ? { key: f.show_if.field, equals: f.show_if.equals } : null,
         };
       })
       : autoFields(recipients, pageCount);
@@ -816,7 +845,7 @@ async function cloneAsDraft(db, src, correctedFrom) {
     );
     map.set(r.id, n.id);
   }
-  const { rows: fields } = await db.query('SELECT id, recipient_id, type, page, x, y, w, h, required, label, options, validation, cond_field_id, cond_value FROM fields WHERE envelope_id = $1', [src]);
+  const { rows: fields } = await db.query('SELECT id, recipient_id, type, page, x, y, w, h, required, label, options, validation, formula, cond_field_id, cond_value FROM fields WHERE envelope_id = $1', [src]);
   const copy = fieldsAsInput(fields, (f) => f.recipient_id).map((f) => ({ ...f, showIf: f.showIf && fields.some((x) => x.id === f.showIf.key) ? f.showIf : null }));
   await insertFields(db, created.id, copy, (rid) => map.get(rid));
   await addEvent(db, created.id, 'created', { data: { corrected_from: correctedFrom } });

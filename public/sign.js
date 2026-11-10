@@ -1,4 +1,5 @@
 import { api, esc } from './app-common.js';
+import { evaluateFormula, formatNumber, parseNumber } from './formula.js';
 import { pageLabeler, renderPdf } from './pdfview.js';
 import { DICT, pickLang } from './sign-i18n.js';
 
@@ -190,7 +191,7 @@ const FORMATS = {
 /** Valor que controla las condiciones (igual que en el servidor). */
 function rawValue(f) {
   if (f.type === 'checkbox') return values[f.id] === true ? 'true' : 'false';
-  if (f.type === 'select' || f.type === 'text') return String(values[f.id] || '').trim();
+  if (f.type === 'select' || f.type === 'radio' || f.type === 'text') return String(values[f.id] || '').trim();
   return '';
 }
 
@@ -209,6 +210,43 @@ function visibleIds() {
   return new Set(data.fields.filter(visible).map((f) => f.id));
 }
 
+function numberValue(f) {
+  if (!f.formula) return parseNumber(values[f.id]);
+  const byLabel = new Map(data.fields.filter((x) => x.type === 'number' && x.label).map((x) => [x.label.toLowerCase(), x]));
+  try {
+    return evaluateFormula(f.formula, (name) => {
+      const ref = byLabel.get(name);
+      return ref && ref !== f ? numberValue(ref) || 0 : 0;
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Ventana para elegir opciones (única o múltiple) o escribir el nombre del sello. */
+function choiceDialog(f, el) {
+  const multiple = f.type === 'multiple';
+  const dlg = document.createElement('dialog');
+  const current = multiple ? values[f.id] || [] : values[f.id] || '';
+  const body = f.type === 'stamp'
+    ? `<label>${t.stampCompany}<input id="ch-stamp" maxlength="80" value="${esc(current)}" autocomplete="organization"></label><p class="muted small">${t.stampHint}</p>`
+    : `<fieldset class="choices"><legend class="visually-hidden">${esc(f.label || t.chooseOption)}</legend>${(f.options || []).map((o, i) => `<label class="choice"><input type="${multiple ? 'checkbox' : 'radio'}" name="ch" value="${esc(o)}" id="ch-${i}"${(multiple ? current.includes(o) : current === o) ? ' checked' : ''}> ${esc(o)}</label>`).join('')}</fieldset>`;
+  dlg.innerHTML = `<form class="modal" method="dialog"><h2>${esc(f.label || (f.type === 'stamp' ? t.stampTitle : t.chooseOption))}</h2>${body}
+    <div class="modal-actions"><button class="btn btn-ghost" value="cancel">${t.cancel}</button><button class="btn btn-primary" value="ok">${t.ok}</button></div></form>`;
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => {
+    if (dlg.returnValue === 'ok') {
+      if (f.type === 'stamp') values[f.id] = dlg.querySelector('#ch-stamp').value.trim();
+      else if (multiple) values[f.id] = [...dlg.querySelectorAll('input:checked')].map((i) => i.value);
+      else values[f.id] = dlg.querySelector('input:checked')?.value || '';
+      update();
+    }
+    dlg.remove();
+    el.focus();
+  });
+  dlg.showModal();
+}
+
 function formatOk(f) {
   const v = String(values[f.id] || '').trim();
   return !v || !f.validation || !FORMATS[f.validation] || FORMATS[f.validation].re.test(v);
@@ -220,7 +258,15 @@ function fieldDone(f) {
   if (f.type === 'checkbox') return !f.required || values[f.id] === true;
   if (f.type === 'text') return (!f.required || Boolean(String(values[f.id] || '').trim())) && formatOk(f);
   if (f.type === 'select') return !f.required || Boolean(values[f.id]);
-  if (f.type === 'attachment') return !f.required || Boolean(files[f.id]);
+  if (f.type === 'attachment' || f.type === 'image') return !f.required || Boolean(files[f.id]);
+  if (f.type === 'radio' || f.type === 'stamp') return !f.required || Boolean(String(values[f.id] || '').trim());
+  if (f.type === 'multiple') return !f.required || (values[f.id] || []).length > 0;
+  if (f.type === 'phone') return (!f.required || Boolean(String(values[f.id] || '').trim())) && (!String(values[f.id] || '').trim() || FORMATS.phone.re.test(String(values[f.id]).trim()));
+  if (f.type === 'number') {
+    if (f.formula) return true;
+    const n = parseNumber(values[f.id]);
+    return !Number.isNaN(n) && (!f.required || n !== null);
+  }
   return true;
 }
 
@@ -228,7 +274,7 @@ function fieldDone(f) {
 function pickFile(f, el) {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'image/png,image/jpeg,application/pdf';
+  input.accept = f.type === 'image' ? 'image/png,image/jpeg' : 'image/png,image/jpeg,application/pdf';
   input.addEventListener('change', async () => {
     const file = input.files[0];
     const err = document.getElementById('bar-err');
@@ -292,10 +338,29 @@ function placeFields() {
       input.setAttribute('aria-label', f.label || t.checkbox);
       input.addEventListener('change', () => { values[f.id] = input.checked; update(); });
       el.appendChild(input);
-    } else if (f.type === 'attachment') {
+    } else if (f.type === 'attachment' || f.type === 'image') {
       el = document.createElement('button');
       el.type = 'button';
       el.addEventListener('click', () => pickFile(f, el));
+    } else if (f.type === 'radio' || f.type === 'multiple' || f.type === 'stamp') {
+      el = document.createElement('button');
+      el.type = 'button';
+      el.addEventListener('click', () => choiceDialog(f, el));
+    } else if (f.type === 'number' && f.formula) {
+      el = document.createElement('div');
+      el.setAttribute('aria-live', 'polite');
+      el.title = t.calculated;
+    } else if (f.type === 'number' || f.type === 'phone') {
+      el = document.createElement('div');
+      const input = document.createElement('input');
+      input.type = f.type === 'phone' ? 'tel' : 'text';
+      input.inputMode = f.type === 'phone' ? 'tel' : 'decimal';
+      input.maxLength = f.type === 'phone' ? 30 : 30;
+      input.value = values[f.id] || '';
+      input.placeholder = f.label || (f.required ? t.required : t.optional);
+      input.setAttribute('aria-label', f.label || (f.type === 'phone' ? t.phone : t.number));
+      input.addEventListener('input', () => { values[f.id] = input.value; update(); });
+      el.appendChild(input);
     } else if (f.type === 'signature' || f.type === 'initials') {
       el = document.createElement('button');
       el.type = 'button';
@@ -321,7 +386,7 @@ function fitFonts() {
   document.querySelectorAll('.sbox').forEach((el) => {
     const px = `${Math.max(8, Math.min(15, el.clientHeight * 0.62))}px`;
     el.style.fontSize = px;
-    const input = el.querySelector('input[type="text"], select');
+    const input = el.querySelector('input[type="text"], input[type="tel"], select');
     if (input) input.style.fontSize = px;
   });
 }
@@ -336,7 +401,15 @@ function update() {
     const done = fieldDone(f);
     el.classList.toggle('filled', done);
     if (done) el.classList.remove('missing');
-    if (f.type === 'attachment' && !el.dataset.busy) {
+    if (f.type === 'radio') el.textContent = values[f.id] || `${f.label || t.chooseOption} ▾`;
+    if (f.type === 'multiple') el.textContent = (values[f.id] || []).length ? values[f.id].join(', ') : `${f.label || t.chooseOptions} ▾`;
+    if (f.type === 'stamp') {
+      el.classList.toggle('stamp-on', Boolean(values[f.id]));
+      el.innerHTML = values[f.id] ? `<span><strong>${esc(values[f.id])}</strong><br>${esc(data.name)}<br>${esc(data.today)}</span>` : esc(f.label || t.stampTitle);
+    }
+    if (f.type === 'number' && f.formula) el.textContent = formatNumber(numberValue(f)) || '0';
+    if (f.type === 'number' && !f.formula) el.classList.toggle('invalid', Number.isNaN(parseNumber(values[f.id])));
+    if ((f.type === 'attachment' || f.type === 'image') && !el.dataset.busy) {
       el.textContent = files[f.id] ? `✓ ${files[f.id]}` : `${t.attach}${f.label ? `: ${f.label}` : ''}`;
       el.title = files[f.id] ? t.replaceFile : t.attachHint;
     }
@@ -378,7 +451,7 @@ async function finish() {
     el.classList.add('missing');
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     err.dataset.kind = 'fields';
-    err.textContent = pending.type === 'text' && !formatOk(pending) ? t.invalidFormat : t.completeFields;
+    err.textContent = (pending.type === 'text' && !formatOk(pending)) || pending.type === 'number' || pending.type === 'phone' ? t.invalidFormat : t.completeFields;
     return;
   }
   if (!document.getElementById('consent').checked) {

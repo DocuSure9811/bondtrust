@@ -20,12 +20,13 @@ export async function uploadAttachment(ctx, token, session, fieldId, { name, byt
   const r = await resolveToken(ctx, token);
   assertSession(ctx, r, session);
   if (!/^[0-9a-f-]{36}$/i.test(String(fieldId))) throw new HttpError(404, 'Campo no encontrado.', 'not_found');
-  const { rows: [field] } = await ctx.pool.query(`SELECT id FROM fields WHERE id = $1 AND recipient_id = $2 AND type = 'attachment'`, [fieldId, r.id]);
+  const { rows: [field] } = await ctx.pool.query(`SELECT id, type FROM fields WHERE id = $1 AND recipient_id = $2 AND type IN ('attachment', 'image')`, [fieldId, r.id]);
   if (!field) throw new HttpError(404, 'Campo no encontrado.', 'not_found');
   if (!Buffer.isBuffer(bytes) || bytes.length === 0) throw new HttpError(400, 'Elegí un archivo.', 'validation');
   if (bytes.length > MAX_ATTACHMENT_BYTES) throw new HttpError(413, 'El archivo supera 5 MB.', 'too_large');
   const type = sniff(bytes);
   if (!type) throw new HttpError(415, 'El adjunto tiene que ser una imagen PNG o JPG, o un PDF.', 'invalid_file');
+  if (field.type === 'image' && type === 'application/pdf') throw new HttpError(415, 'Este campo necesita una imagen PNG o JPG.', 'invalid_file');
   if (type === 'application/pdf') {
     const { pageCount } = await inspectPdf(bytes);
     if (pageCount > MAX_ATTACHMENT_PAGES) throw new HttpError(400, `El PDF adjunto puede tener hasta ${MAX_ATTACHMENT_PAGES} páginas.`, 'validation');

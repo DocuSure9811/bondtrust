@@ -12,6 +12,12 @@ const FIELD_TYPES = [
   ['checkbox', 'Casilla de verificación'],
   ['select', 'Lista desplegable; requiere "options": ["A", "B", …] (hasta 30)'],
   ['attachment', 'Archivo que sube el firmante (foto del documento, comprobante): PNG, JPG o PDF de hasta 5 MB; se anexa al PDF final'],
+  ['radio', 'Opción única entre varias; requiere "options"'],
+  ['multiple', 'Selección múltiple; requiere "options". Se guarda como lista'],
+  ['number', 'Número. Con "formula" (ej. "{Precio} * {Cantidad}", usando las etiquetas de otros campos number del mismo firmante) se calcula solo en el servidor'],
+  ['phone', 'Teléfono con formato validado'],
+  ['image', 'Imagen PNG o JPG que sube el firmante y se dibuja dentro del campo'],
+  ['stamp', 'Sello de empresa: el firmante escribe el nombre de su empresa y se estampa con su nombre y la fecha'],
 ];
 
 const ERRORS = [
@@ -219,7 +225,7 @@ Cuerpo JSON:
 - document_base64 (string): el PDF en base64, máx. 15 MB, sin contraseña.
 - documents (array, alternativa a document_base64): [{ "name", "document_base64" }] hasta 10 PDF que se unen en un solo sobre, en ese orden (máx. 25 MB y 200 páginas en total). Las páginas se numeran de corrido: si el primero tiene 3 páginas, la página 1 del segundo es la 4.
 - recipients (array, obligatorio): [{ "name", "email", "role": "signer" | "cc" (por defecto signer), "order": 1.. (solo si sequential) }]
-- fields (array, opcional): [{ "recipient": índice (desde 0) o email, "type", "page" (desde 1), "x", "y", "width", "height" (fracciones 0..1 de la página, origen arriba a la izquierda), "required" (bool), "label", "options" (listas), "validation" (textos), "key" y "show_if" }]
+- fields (array, opcional): [{ "recipient": índice (desde 0) o email, "type", "page" (desde 1), "x", "y", "width", "height" (fracciones 0..1 de la página, origen arriba a la izquierda), "required" (bool), "label", "options" (select, radio, multiple), "validation" (textos), "formula" (number), "key" y "show_if" }]
   Campos condicionales: dale un "key" al campo que controla (casilla, lista o texto) y en el campo dependiente poné "show_if": {"field": "<key>", "equals": "<valor>"}. Con casillas el valor es "true" o "false". Ambos campos tienen que ser del mismo firmante; la firma no puede ser condicional. Si la condición no se cumple, el campo no se muestra ni se exige.
   Si no mandás fields, DocSure ubica firma y fecha de cada firmante al pie de la última página (hasta 6 firmantes).
 - message (string, opcional): mensaje para los firmantes.
@@ -334,6 +340,7 @@ export function openapiSpec(config) {
             required: { type: 'boolean' }, label: { type: 'string', maxLength: 60 },
             options: { type: 'array', items: { type: 'string', maxLength: 80 }, maxItems: 30, description: 'Opciones de una lista (type select).' },
             validation: { type: 'string', enum: ['email', 'number', 'id', 'phone'], description: 'Formato exigido a un campo de texto.' },
+            formula: { type: 'string', maxLength: 300, description: 'Solo type number: cálculo con + - * / y paréntesis sobre {Etiqueta} de otros campos number.' },
             key: { type: 'string', maxLength: 60, description: 'Referencia del campo para usarla en show_if.' },
             show_if: { type: 'object', properties: { field: { type: 'string' }, equals: { type: 'string' } }, description: 'El campo se muestra solo si el campo "field" (del mismo firmante) vale "equals".' },
           },

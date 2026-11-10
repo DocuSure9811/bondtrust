@@ -1,8 +1,11 @@
+import { formulaRefs, parseFormula } from '../../public/formula.js';
 import { HttpError, cleanNumber, cleanText } from '../validate.js';
 
-export const FIELD_TYPES = new Set(['signature', 'initials', 'date', 'name', 'email', 'text', 'checkbox', 'select', 'attachment']);
+export const FIELD_TYPES = new Set(['signature', 'initials', 'date', 'name', 'email', 'text', 'checkbox', 'select', 'attachment', 'radio', 'multiple', 'number', 'phone', 'image', 'stamp']);
+/** Tipos con lista de opciones. */
+export const OPTION_TYPES = new Set(['select', 'radio', 'multiple']);
 /** Tipos cuyo valor puede controlar si otro campo se muestra. */
-export const CONTROL_TYPES = new Set(['checkbox', 'select', 'text']);
+export const CONTROL_TYPES = new Set(['checkbox', 'select', 'radio', 'text']);
 export const VALIDATIONS = {
   email: { re: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: 'un email válido' },
   number: { re: /^-?\d+([.,]\d+)?$/, message: 'un número' },
@@ -26,10 +29,19 @@ export function cleanFields(fieldsIn, recipients, pageCount) {
     const w = cleanNumber(f.w, { min: 0.01, max: 1, field: 'El ancho' });
     const h = cleanNumber(f.h, { min: 0.005, max: 1, field: 'El alto' });
     let options = null;
-    if (f.type === 'select') {
+    if (OPTION_TYPES.has(f.type)) {
       const list = Array.isArray(f.options) ? f.options.map((o) => cleanText(o, { max: 80, field: 'una opción de la lista', required: false })).filter(Boolean) : [];
       options = [...new Set(list)];
       if (options.length < 1 || options.length > MAX_OPTIONS) throw new HttpError(400, `Cada lista necesita entre 1 y ${MAX_OPTIONS} opciones distintas.`, 'validation');
+    }
+    let formula = null;
+    if (f.type === 'number' && f.formula) {
+      formula = cleanText(String(f.formula), { max: 300, field: 'la fórmula' });
+      try {
+        parseFormula(formula);
+      } catch (err) {
+        throw new HttpError(400, err.message, 'validation');
+      }
     }
     const validation = f.type === 'text' && f.validation ? String(f.validation) : null;
     if (validation && !VALIDATIONS[validation]) throw new HttpError(400, 'Formato de campo inválido (email, number, id o phone).', 'validation');
@@ -42,10 +54,11 @@ export function cleanFields(fieldsIn, recipients, pageCount) {
       y: Math.min(y, 1 - h),
       w,
       h,
-      required: f.type === 'checkbox' ? f.required === true : f.required !== false,
+      required: f.type === 'checkbox' ? f.required === true : formula ? false : f.required !== false,
       label: cleanText(f.label ?? '', { max: 60, field: 'la etiqueta', required: false }),
       options,
       validation,
+      formula,
       showIf: f.showIf ?? null,
     };
   });
@@ -64,8 +77,24 @@ export function cleanFields(fieldsIn, recipients, pageCount) {
     if (parent.recipientKey !== f.recipientKey) throw new HttpError(400, 'La condición tiene que usar un campo del mismo firmante.', 'validation');
     const equals = cleanText(String(f.showIf.equals ?? ''), { max: 80, field: 'el valor de la condición' });
     if (parent.type === 'checkbox' && !['true', 'false'].includes(equals)) throw new HttpError(400, 'Con una casilla, la condición es "true" (marcada) o "false" (sin marcar).', 'validation');
-    if (parent.type === 'select' && !parent.options.includes(equals)) throw new HttpError(400, 'La condición tiene que usar una de las opciones de la lista.', 'validation');
+    if ((parent.type === 'select' || parent.type === 'radio') && !parent.options.includes(equals)) throw new HttpError(400, 'La condición tiene que usar una de las opciones de la lista.', 'validation');
     f.showIf = { key: parent.key, equals };
+  }
+  // Fórmulas: referencian por etiqueta a campos numéricos del mismo firmante, sin ciclos.
+  const numbersOf = (rk) => new Map(fields.filter((x) => x.type === 'number' && x.recipientKey === rk && x.label).map((x) => [x.label.toLowerCase(), x]));
+  for (const f of fields.filter((x) => x.formula)) {
+    const nums = numbersOf(f.recipientKey);
+    for (const ref of formulaRefs(f.formula)) {
+      if (!nums.has(ref)) throw new HttpError(400, `La fórmula usa {${ref}}, pero no hay un campo numérico de este firmante con esa etiqueta.`, 'validation');
+    }
+    const seen = new Set();
+    const walk = (field) => {
+      if (seen.has(field.key)) throw new HttpError(400, 'Las fórmulas se usan entre sí en círculo.', 'validation');
+      seen.add(field.key);
+      if (field.formula) formulaRefs(field.formula).forEach((r) => walk(nums.get(r)));
+      seen.delete(field.key);
+    };
+    walk(f);
   }
   // Sin ciclos: cada cadena de condiciones termina en un campo siempre visible.
   for (const f of fields) {
@@ -83,9 +112,9 @@ export async function insertFields(db, envelopeId, fields, recipientIdOf) {
   const idByKey = new Map();
   for (const f of fields) {
     const { rows: [row] } = await db.query(
-      `INSERT INTO fields (envelope_id, recipient_id, type, page, x, y, w, h, required, label, options, validation)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-      [envelopeId, recipientIdOf(f.recipientKey), f.type, f.page, f.x, f.y, f.w, f.h, f.required, f.label, f.options ? JSON.stringify(f.options) : null, f.validation],
+      `INSERT INTO fields (envelope_id, recipient_id, type, page, x, y, w, h, required, label, options, validation, formula)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+      [envelopeId, recipientIdOf(f.recipientKey), f.type, f.page, f.x, f.y, f.w, f.h, f.required, f.label, f.options ? JSON.stringify(f.options) : null, f.validation, f.formula],
     );
     idByKey.set(f.key, row.id);
   }
@@ -100,7 +129,7 @@ export function fieldsAsInput(rows, recipientKeyOf) {
     key: f.id,
     recipientKey: recipientKeyOf(f),
     type: f.type, page: f.page, x: f.x, y: f.y, w: f.w, h: f.h, required: f.required, label: f.label,
-    options: f.options, validation: f.validation,
+    options: f.options, validation: f.validation, formula: f.formula,
     showIf: f.cond_field_id ? { key: f.cond_field_id, equals: f.cond_value } : null,
   }));
 }

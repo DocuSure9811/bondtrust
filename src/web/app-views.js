@@ -124,13 +124,14 @@ export function editorPage(config, user) {
           <button type="button" data-type="signature" class="active">Firma</button><button type="button" data-type="initials">Iniciales</button>
           <button type="button" data-type="date">Fecha de firma</button><button type="button" data-type="name">Nombre</button>
           <button type="button" data-type="email">Email</button><button type="button" data-type="text">Texto</button>
-          <button type="button" data-type="checkbox">Casilla</button><button type="button" data-type="select">Lista</button><button type="button" data-type="attachment">Adjunto</button>
+          <button type="button" data-type="checkbox">Casilla</button><button type="button" data-type="select">Lista</button><button type="button" data-type="radio">Opción única</button><button type="button" data-type="multiple">Selección múltiple</button><button type="button" data-type="number">Número</button><button type="button" data-type="phone">Teléfono</button><button type="button" data-type="attachment">Adjunto</button><button type="button" data-type="image">Imagen</button><button type="button" data-type="stamp">Sello</button>
         </div>
         <div id="selected-props" class="props" hidden>
           <p class="props-title" id="prop-title">Campo seleccionado</p>
           <label class="switch"><input type="checkbox" id="prop-required"> Obligatorio</label>
           <label>Etiqueta<input id="prop-label" maxlength="60"></label>
           <label id="prop-format-wrap" hidden>Formato<select id="prop-format"><option value="">Texto libre</option><option value="email">Email</option><option value="number">Número</option><option value="id">Documento de identidad</option><option value="phone">Teléfono</option></select></label>
+          <label id="prop-formula-wrap" hidden>Fórmula <span class="muted">(opcional)</span><input id="prop-formula" maxlength="300" placeholder="{Precio} * {Cantidad}"><span class="muted small">Usá las etiquetas de otros campos Número entre llaves. Se calcula sola.</span></label>
           <label id="prop-options-wrap" hidden>Opciones <span class="muted">(una por línea)</span><textarea id="prop-options" rows="4" maxlength="2500"></textarea></label>
           <div id="prop-cond-wrap" hidden>
             <label>Mostrar este campo<select id="prop-cond-field"></select></label>

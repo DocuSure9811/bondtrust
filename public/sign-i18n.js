@@ -1,6 +1,7 @@
 /** Textos de la experiencia de firma en español, inglés y portugués. */
 export const DICT = {
   es: {
+    chooseOptions: 'Elegí opciones', ok: 'Listo', stampTitle: 'Sello de la empresa', stampCompany: 'Nombre de la empresa', stampHint: 'El sello muestra la empresa, tu nombre y la fecha.', calculated: 'Se calcula solo', phone: 'Teléfono', number: 'Número',
     attach: 'Adjuntar archivo', attachHint: 'Foto o PDF de hasta 5 MB', replaceFile: 'Tocá para reemplazar el archivo', uploading: 'Subiendo…', fileTooBig: 'El archivo supera 5 MB.', uploadFailed: 'No se pudo subir el archivo.',
     chooseOption: 'Elegí una opción', invalidFormat: 'Revisá el formato del campo marcado.',
     pageWord: { page: 'Página', of: 'de' },
@@ -25,6 +26,7 @@ export const DICT = {
     errors: {},
   },
   en: {
+    chooseOptions: 'Choose options', ok: 'Done', stampTitle: 'Company stamp', stampCompany: 'Company name', stampHint: 'The stamp shows the company, your name and the date.', calculated: 'Calculated automatically', phone: 'Phone', number: 'Number',
     attach: 'Attach file', attachHint: 'Photo or PDF up to 5 MB', replaceFile: 'Tap to replace the file', uploading: 'Uploading…', fileTooBig: 'The file is larger than 5 MB.', uploadFailed: 'The file could not be uploaded.',
     chooseOption: 'Choose an option', invalidFormat: 'Check the format of the highlighted field.',
     pageWord: { page: 'Page', of: 'of' },
@@ -55,6 +57,7 @@ export const DICT = {
     },
   },
   pt: {
+    chooseOptions: 'Escolha opções', ok: 'Pronto', stampTitle: 'Carimbo da empresa', stampCompany: 'Nome da empresa', stampHint: 'O carimbo mostra a empresa, seu nome e a data.', calculated: 'Calculado automaticamente', phone: 'Telefone', number: 'Número',
     attach: 'Anexar arquivo', attachHint: 'Foto ou PDF de até 5 MB', replaceFile: 'Toque para substituir o arquivo', uploading: 'Enviando…', fileTooBig: 'O arquivo tem mais de 5 MB.', uploadFailed: 'Não foi possível enviar o arquivo.',
     chooseOption: 'Escolha uma opção', invalidFormat: 'Revise o formato do campo destacado.',
     pageWord: { page: 'Página', of: 'de' },

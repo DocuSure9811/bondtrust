@@ -188,8 +188,6 @@ ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS documents jsonb NOT NULL DEFAULT 
 ALTER TABLE templates ADD COLUMN IF NOT EXISTS documents jsonb NOT NULL DEFAULT '[]'::jsonb;
 
 -- v0.5: listas, validaciones y campos condicionales
-ALTER TABLE fields DROP CONSTRAINT IF EXISTS fields_type_check;
-ALTER TABLE fields ADD CONSTRAINT fields_type_check CHECK (type IN ('signature', 'initials', 'date', 'name', 'email', 'text', 'checkbox', 'select', 'attachment'));
 ALTER TABLE fields ADD COLUMN IF NOT EXISTS options jsonb;
 ALTER TABLE fields ADD COLUMN IF NOT EXISTS validation text;
 ALTER TABLE fields ADD COLUMN IF NOT EXISTS cond_field_id uuid REFERENCES fields(id) ON DELETE SET NULL;
@@ -271,6 +269,11 @@ CREATE TABLE IF NOT EXISTS account_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS account_events_user_idx ON account_events (user_id, id DESC);
+
+-- v0.6: campos nuevos y fórmulas
+ALTER TABLE fields DROP CONSTRAINT IF EXISTS fields_type_check;
+ALTER TABLE fields ADD CONSTRAINT fields_type_check CHECK (type IN ('signature', 'initials', 'date', 'name', 'email', 'text', 'checkbox', 'select', 'attachment', 'radio', 'multiple', 'number', 'phone', 'image', 'stamp'));
+ALTER TABLE fields ADD COLUMN IF NOT EXISTS formula text;
 
 -- v0.6: la marca por defecto pasó de verde a azul; quien guardó el verde por defecto vuelve al nuevo
 UPDATE users SET brand_color = NULL WHERE brand_color = '#0e7c66';

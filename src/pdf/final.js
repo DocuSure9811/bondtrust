@@ -99,8 +99,35 @@ function at(p, a, u) {
   return { x: p.ox + p.along[0] * a + p.up[0] * u, y: p.oy + p.along[1] * a + p.up[1] * u };
 }
 
-async function drawField(pdf, page, field, font, imageCache) {
+/** Sello de empresa: recuadro con el nombre de la empresa, quién firmó y la fecha. */
+function drawStamp(page, p, value, fonts) {
+  let data;
+  try { data = JSON.parse(value); } catch { return; }
+  const lines = [[data.company, fonts.bold], [data.name, fonts.regular], [`Firmado el ${data.date}`, fonts.regular]];
+  const size = Math.max(5, Math.min(11, (p.boxH - 8) / 3.6));
+  page.drawRectangle({ ...at(p, 1, 1), width: p.boxW - 2, height: p.boxH - 2, borderColor: BRAND, borderWidth: 1.4, rotate: p.rotate });
+  lines.forEach(([text, f], i) => {
+    const t = fitText(f, encodable(f, text), size, p.boxW - 8);
+    page.drawText(t, { ...at(p, (p.boxW - f.widthOfTextAtSize(t, size)) / 2, p.boxH - 4 - size * (i + 1) * 1.15), size, font: f, color: BRAND, rotate: p.rotate });
+  });
+}
+
+async function drawField(pdf, page, field, font, imageCache, ctx) {
   const p = placement(page, field);
+  if (field.type === 'stamp') {
+    if (field.value) drawStamp(page, p, field.value, ctx.fonts);
+    return;
+  }
+  if (field.type === 'image') {
+    const a = ctx.imagesByField.get(field.id);
+    if (!a) return;
+    const image = a.content_type === 'image/png' ? await pdf.embedPng(a.data) : await pdf.embedJpg(a.data);
+    const scale = Math.min(p.boxW / image.width, p.boxH / image.height);
+    const w = image.width * scale;
+    const h = image.height * scale;
+    page.drawImage(image, { ...at(p, (p.boxW - w) / 2, (p.boxH - h) / 2), width: w, height: h, rotate: p.rotate });
+    return;
+  }
   if (field.type === 'signature' || field.type === 'initials') {
     if (!field.value) return;
     let image = imageCache.get(field.value);
@@ -114,7 +141,10 @@ async function drawField(pdf, page, field, font, imageCache) {
     page.drawImage(image, { ...at(p, (p.boxW - w) / 2, (p.boxH - h) / 2), width: w, height: h, rotate: p.rotate });
     return;
   }
-  const raw = field.type === 'checkbox' ? (field.value === 'true' ? 'X' : '') : field.type === 'attachment' && field.value ? `Adjunto: ${field.value}` : field.value;
+  let raw = field.type === 'checkbox' ? (field.value === 'true' ? 'X' : '') : field.type === 'attachment' && field.value ? `Adjunto: ${field.value}` : field.value;
+  if (field.type === 'multiple' && raw) {
+    try { raw = JSON.parse(raw).join(', '); } catch { /* valor ya plano */ }
+  }
   if (!raw) return;
   const size = Math.max(6, Math.min(12, p.boxH * 0.62));
   const text = fitText(font, encodable(font, raw), size, Math.max(4, p.boxW - 4));
@@ -297,7 +327,7 @@ async function addCertificate(pdf, { envelope, owner, recipients, events, siteUr
       w.text(`${a.name} · ${a.recipient_name} <${a.recipient_email}> · ${Math.ceil(a.size / 1024)} KB`, { size: 9 });
       w.text(`SHA-256 ${a.sha256}`, { size: 8, color: MUTED });
     }
-    w.text('Cada archivo se anexa completo antes de este certificado.', { size: 8.5, color: MUTED });
+    w.text('Los archivos adjuntos se anexan completos antes de este certificado; las imágenes de los campos de imagen están dentro del documento.', { size: 8.5, color: MUTED });
     w.gap(4);
   }
   w.gap(6);
@@ -322,11 +352,16 @@ export async function buildFinalPdf({ original, fields, envelope, owner, recipie
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const pages = pdf.getPages();
   const imageCache = new Map();
+  const drawCtx = {
+    fonts: { regular: font, bold: await pdf.embedFont(StandardFonts.HelveticaBold) },
+    imagesByField: new Map(attachments.filter((a) => a.field_type === 'image').map((a) => [a.field_id, a])),
+  };
   for (const field of fields) {
     const page = pages[field.page - 1];
-    if (page) await drawField(pdf, page, field, font, imageCache);
+    if (page) await drawField(pdf, page, field, font, imageCache, drawCtx);
   }
-  await addAttachments(pdf, attachments);
+  // Las imágenes van dentro de su campo; los adjuntos se anexan completos.
+  await addAttachments(pdf, attachments.filter((a) => a.field_type !== 'image'));
   await addCertificate(pdf, { envelope, owner, recipients, events, siteUrl, attachments });
   pdf.setProducer('DocSure');
   pdf.setTitle(envelope.title);
