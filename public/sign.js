@@ -384,7 +384,8 @@ function placeFields() {
 /** Ajusta la letra de cada campo a la altura de su casillero. */
 function fitFonts() {
   document.querySelectorAll('.sbox').forEach((el) => {
-    const px = `${Math.max(8, Math.min(15, el.clientHeight * 0.62))}px`;
+    const lines = el.dataset.type === "stamp" ? 3.6 : 1;
+    const px = `${Math.max(lines > 1 ? 6 : 8, Math.min(15, (el.clientHeight * 0.62) / lines))}px`;
     el.style.fontSize = px;
     const input = el.querySelector('input[type="text"], input[type="tel"], select');
     if (input) input.style.fontSize = px;
