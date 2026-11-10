@@ -148,7 +148,7 @@ export async function ask(ctx, userId, id, question) {
   const doc = await documentOf(ctx, userId, id);
   const answer = await chat(ctx, [
     { role: 'system', content: SYSTEM },
-    { role: 'user', content: `Respondé la pregunta usando solo el documento. Si la respuesta no está en el texto, decí que no figura. Citá la cláusula o la página cuando puedas. Máximo 150 palabras, sin formato markdown.\n\n<documento>\n${doc.text}\n</documento>\n\nPregunta: ${q}` },
+    { role: 'user', content: `Respondé la pregunta usando solo el documento. Antes de responder, revisá todas las cláusulas relacionadas y aclará condiciones, plazos mínimos o restricciones que cambien la respuesta. Si la respuesta no está en el texto, decí que no figura. Citá la cláusula o la página cuando puedas. Máximo 150 palabras, sin formato markdown.\n\n<documento>\n${doc.text}\n</documento>\n\nPregunta: ${q}` },
   ], { maxTokens: 700 });
   return { answer: answer.slice(0, 2000), truncated: doc.truncated };
 }
