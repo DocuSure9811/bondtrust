@@ -2,6 +2,7 @@ import express from 'express';
 import * as keys from './services/apikeys.js';
 import * as attachments from './services/attachments.js';
 import * as contacts from './services/contacts.js';
+import * as folders from './services/folders.js';
 import * as env from './services/envelopes.js';
 import * as templatesSvc from './services/templates.js';
 import * as hooks from './services/webhooks.js';
@@ -56,8 +57,14 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
 
   router.get('/envelopes', asyncRoute(async (req, res) => {
     const list = await env.listEnvelopes(ctx, req.apiUser.id);
-    const status = typeof req.query.status === 'string' ? req.query.status : null;
-    res.json({ data: list.filter((e) => !status || e.status === status).map((e) => ({ ...e, signers_total: e.signers, signers_signed: e.signed, signers: undefined, signed: undefined })) });
+    const str = (v) => (typeof v === 'string' && v ? v : null);
+    const status = str(req.query.status);
+    const folder = str(req.query.folder_id);
+    const q = str(req.query.q)?.toLowerCase();
+    const match = (e) => (!status || e.status === status)
+      && (!folder || (folder === 'none' ? !e.folder_id : e.folder_id === folder))
+      && (!q || e.title.toLowerCase().includes(q) || e.recipients.some((r) => r.name.toLowerCase().includes(q) || r.email.includes(q)));
+    res.json({ data: list.filter(match).map(({ signers, signed, ...e }) => ({ ...e, signers_total: signers, signers_signed: signed })) });
   }));
 
   router.post('/envelopes', asyncRoute(async (req, res) => {
@@ -128,6 +135,15 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
   router.post('/templates/:id/bulk', asyncRoute(async (req, res) => {
     limit(`bulk:${req.apiUser.id}`, 10, 3600_000);
     res.json(await templatesSvc.bulkSend(ctx, req.apiUser, req.params.id, req.body?.rows, clientMeta(req)));
+  }));
+
+  router.get('/folders', asyncRoute(async (req, res) => res.json({ data: await folders.listFolders(ctx, req.apiUser.id) })));
+  router.post('/folders', asyncRoute(async (req, res) => res.status(201).json(await folders.createFolder(ctx, req.apiUser.id, req.body || {}))));
+  router.put('/folders/:id', asyncRoute(async (req, res) => res.json(await folders.renameFolder(ctx, req.apiUser.id, req.params.id, req.body || {}))));
+  router.delete('/folders/:id', asyncRoute(async (req, res) => res.json(await folders.deleteFolder(ctx, req.apiUser.id, req.params.id))));
+  router.put('/envelopes/:id/folder', asyncRoute(async (req, res) => {
+    await folders.moveEnvelope(ctx, req.apiUser.id, req.params.id, req.body?.folder_id ?? null);
+    res.json(await env.apiEnvelope(ctx, req.apiUser.id, req.params.id));
   }));
 
   router.get('/contacts', asyncRoute(async (req, res) => res.json({ data: await contacts.listContacts(ctx, req.apiUser.id, req.query.q) })));

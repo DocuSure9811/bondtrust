@@ -210,6 +210,17 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 CREATE INDEX IF NOT EXISTS attachments_envelope_idx ON attachments (envelope_id);
 
+-- v0.5: carpetas
+CREATE TABLE IF NOT EXISTS folders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (owner_id, name)
+);
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS folder_id uuid REFERENCES folders(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS envelopes_folder_idx ON envelopes (folder_id) WHERE folder_id IS NOT NULL;
+
 -- v0.5: contactos
 CREATE TABLE IF NOT EXISTS contacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

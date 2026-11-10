@@ -60,7 +60,29 @@ export function dashboardPage(config, user) {
     <button role="tab" aria-selected="false" data-filter="completed">Completados</button><button role="tab" aria-selected="false" data-filter="draft">Borradores</button>
     <button role="tab" aria-selected="false" data-filter="closed">Rechazados, anulados o vencidos</button>
   </div>
+  <div class="toolbar">
+    <label class="visually-hidden" for="q">Buscar sobres</label><input id="q" type="search" placeholder="Buscar por documento, nombre o email" autocomplete="off">
+    <label class="visually-hidden" for="folder">Carpeta</label><select id="folder"><option value="">Todas las carpetas</option></select>
+    <label class="date-filter">Desde<input type="date" id="from"></label>
+    <label class="date-filter">Hasta<input type="date" id="to"></label>
+    <button class="btn btn-ghost btn-sm" type="button" id="folders-btn">Carpetas</button>
+    <button class="btn btn-ghost btn-sm" type="button" id="export">Exportar CSV</button>
+  </div>
+  <div class="bulk-bar" id="bulk" hidden>
+    <span id="bulk-count"></span>
+    <label class="visually-hidden" for="bulk-folder">Mover a</label><select id="bulk-folder"></select>
+    <button class="btn btn-primary btn-sm" type="button" id="bulk-move">Mover</button>
+    <button class="btn btn-ghost btn-sm" type="button" id="bulk-clear">Cancelar</button>
+  </div>
+  <p class="muted small" id="count" aria-live="polite"></p>
   <div id="list" class="env-list" aria-live="polite"><p class="muted">Cargando…</p></div>
+  <dialog id="folders-dialog" aria-labelledby="folders-title"><div class="modal">
+    <h2 id="folders-title">Carpetas</h2>
+    <form id="folder-form" class="inline-form" novalidate><label class="visually-hidden" for="folder-name">Nombre de la carpeta</label><input id="folder-name" maxlength="60" placeholder="Nueva carpeta" required><button class="btn btn-primary" type="submit">Crear</button></form>
+    <p class="form-error" role="alert" id="folder-msg"></p>
+    <ul class="rlist" id="folder-list"></ul>
+    <div class="modal-actions"><button class="btn btn-ghost" type="button" id="folders-close">Cerrar</button></div>
+  </div></dialog>
 </div>`,
     scripts: ['/static/dashboard.js'],
   });

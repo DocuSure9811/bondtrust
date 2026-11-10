@@ -11,6 +11,7 @@ import * as apiKeys from './services/apikeys.js';
 import * as account from './services/account.js';
 import * as attachments from './services/attachments.js';
 import * as contacts from './services/contacts.js';
+import * as folders from './services/folders.js';
 import * as env from './services/envelopes.js';
 import * as templatesSvc from './services/templates.js';
 import * as webhooks from './services/webhooks.js';
@@ -207,6 +208,13 @@ export function createApp({ pool, config, mailer }) {
     limit(`bulk:${req.user.id}`, 10, 3600_000);
     res.json(await templatesSvc.bulkSend(ctx, req.user, req.params.id, req.body.rows, clientMeta(req)));
   }));
+
+  // ---------- API del panel: carpetas ----------
+  app.get('/api/carpetas', requireUser, asyncRoute(async (req, res) => res.json({ data: await folders.listFolders(ctx, req.user.id) })));
+  app.post('/api/carpetas', requireUser, json, asyncRoute(async (req, res) => res.status(201).json(await folders.createFolder(ctx, req.user.id, req.body))));
+  app.put('/api/carpetas/:id', requireUser, json, asyncRoute(async (req, res) => res.json(await folders.renameFolder(ctx, req.user.id, req.params.id, req.body))));
+  app.delete('/api/carpetas/:id', requireUser, asyncRoute(async (req, res) => res.json(await folders.deleteFolder(ctx, req.user.id, req.params.id))));
+  app.put('/api/sobres/:id/carpeta', requireUser, json, asyncRoute(async (req, res) => res.json(await folders.moveEnvelope(ctx, req.user.id, req.params.id, req.body.folderId ?? null))));
 
   // ---------- API del panel: contactos ----------
   app.get('/api/contactos', requireUser, asyncRoute(async (req, res) => res.json({ data: await contacts.listContacts(ctx, req.user.id, req.query.q) })));

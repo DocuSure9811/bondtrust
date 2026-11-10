@@ -473,6 +473,19 @@ dialog::backdrop { background: rgba(6, 38, 31, .55); }
 .fbox.conditional { border-style: dashed; }
 .sbox[data-type="attachment"] { white-space: nowrap; text-overflow: ellipsis; justify-content: flex-start; padding: 0 6px; }
 .small-title { font-size: .95rem; margin: 18px 0 8px; }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 10px; }
+.toolbar input, .toolbar select { margin: 0; width: auto; }
+.toolbar #q { flex: 1 1 260px; }
+.date-filter { display: flex; align-items: center; gap: 6px; margin: 0; font-size: .85rem; color: var(--muted); font-weight: 600; }
+.date-filter input { padding: .45em .6em; }
+.bulk-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: var(--brand-50); border: 1px solid var(--brand-100); border-radius: 12px; padding: 8px 12px; margin-bottom: 10px; }
+.bulk-bar select { margin: 0; width: auto; }
+.env-item { display: grid; grid-template-columns: 28px 1fr; align-items: center; gap: 6px; }
+.env-check { width: 18px; height: 18px; margin: 0 auto; }
+.folder-tag { display: inline-block; font-size: .72rem; font-weight: 700; color: var(--brand-700); background: var(--brand-50); border-radius: 6px; padding: 1px 7px; vertical-align: middle; margin-left: 4px; }
+.inline-select { display: inline-flex; align-items: center; gap: 8px; font-size: .88rem; margin: 6px 0 0; }
+.inline-select select { margin: 0; width: auto; padding: .35em .6em; }
+@media (max-width: 640px) { .toolbar #q { flex-basis: 100%; } .date-filter { flex: 1 1 45%; } .date-filter input { flex: 1; min-width: 0; } }
 #prop-cond-wrap { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 4px; }
 .page-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 @media (max-width: 640px) {

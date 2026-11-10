@@ -153,7 +153,7 @@ export async function ownedEnvelope(db, ownerId, id, { lock = false } = {}) {
   const { rows } = await db.query(
     `SELECT id, owner_id, title, message, status, sequential, page_count, original_sha256, final_sha256,
             send_idempotency_key, expires_at, sent_at, completed_at, created_at, language, expire_days,
-            reminder_days, corrected_from, template_id, documents
+            reminder_days, corrected_from, template_id, documents, folder_id
        FROM envelopes WHERE id = $1 AND owner_id = $2 ${lock ? 'FOR UPDATE' : ''}`,
     [id, ownerId],
   );
@@ -345,11 +345,12 @@ export async function deleteDraft(ctx, ownerId, id) {
 
 export async function listEnvelopes(ctx, ownerId) {
   const { rows } = await ctx.pool.query(
-    `SELECT e.id, e.title, e.status, e.created_at, e.sent_at, e.completed_at,
+    `SELECT e.id, e.title, e.status, e.created_at, e.sent_at, e.completed_at, e.folder_id,
             count(r.id) FILTER (WHERE r.role = 'signer')::int AS signers,
-            count(r.id) FILTER (WHERE r.role = 'signer' AND r.status = 'signed')::int AS signed
+            count(r.id) FILTER (WHERE r.role = 'signer' AND r.status = 'signed')::int AS signed,
+            coalesce(json_agg(json_build_object('name', r.name, 'email', r.email, 'role', r.role) ORDER BY r.position) FILTER (WHERE r.id IS NOT NULL), '[]') AS recipients
        FROM envelopes e LEFT JOIN recipients r ON r.envelope_id = e.id
-      WHERE e.owner_id = $1 GROUP BY e.id ORDER BY e.created_at DESC LIMIT 500`,
+      WHERE e.owner_id = $1 GROUP BY e.id ORDER BY e.created_at DESC LIMIT 2000`,
     [ownerId],
   );
   return rows;
@@ -715,6 +716,7 @@ export async function apiEnvelope(ctx, ownerId, id) {
     title: e.title,
     message: e.message,
     status: e.status,
+    folder_id: e.folder_id,
     sequential: e.sequential,
     page_count: e.page_count,
     created_at: e.created_at,
@@ -787,9 +789,9 @@ export async function createFromApi(ctx, owner, body, idempotencyKey, meta) {
 async function cloneAsDraft(db, src, correctedFrom) {
   const { rows: [created] } = await db.query(
     `INSERT INTO envelopes (owner_id, title, message, sequential, language, expire_days, reminder_days,
-                            original_pdf, original_sha256, page_count, corrected_from, template_id, documents)
+                            original_pdf, original_sha256, page_count, corrected_from, template_id, documents, folder_id)
      SELECT owner_id, title, message, sequential, language, expire_days, reminder_days,
-            original_pdf, original_sha256, page_count, $2, template_id, documents FROM envelopes WHERE id = $1 RETURNING id`,
+            original_pdf, original_sha256, page_count, $2, template_id, documents, folder_id FROM envelopes WHERE id = $1 RETURNING id`,
     [src, correctedFrom],
   );
   const { rows: recips } = await db.query('SELECT id, position, name, email, role, routing_order FROM recipients WHERE envelope_id = $1 ORDER BY position', [src]);

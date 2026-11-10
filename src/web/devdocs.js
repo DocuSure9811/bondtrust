@@ -150,7 +150,7 @@ const ENDPOINTS = [
   ['POST', '/agent/token', 'El asistente consulta hasta recibir su clave (sin clave).'],
   ['GET', '/me', 'Cuenta, plan y sobres enviados este mes.'],
   ['POST', '/envelopes', 'Crea un sobre con el PDF, los destinatarios y los campos, y lo envía.'],
-  ['GET', '/envelopes', 'Lista los sobres. Filtro opcional ?status=draft|sent|completed|declined|voided.'],
+  ['GET', '/envelopes', 'Lista los sobres con sus destinatarios. Filtros opcionales: ?status=draft|sent|completed|declined|voided|expired, ?folder_id=<id>|none y ?q= (busca en título, nombre y email).'],
   ['GET', '/envelopes/{id}', 'Estado del sobre, de cada destinatario y su historial.'],
   ['POST', '/envelopes/{id}/documents', 'Agrega un PDF al final de un borrador: {"name", "document_base64"}.'],
   ['POST', '/envelopes/{id}/send', 'Envía un borrador (creado con "send": false).'],
@@ -164,6 +164,11 @@ const ENDPOINTS = [
   ['GET', '/templates', 'Lista las plantillas con sus roles.'],
   ['POST', '/templates/{id}/envelopes', 'Crea y envía un sobre desde una plantilla: {"recipients": [...] en el orden de los roles}.'],
   ['POST', '/templates/{id}/bulk', 'Envío masivo (plantillas de un firmante): {"rows": [{"name","email"}]} hasta 200.'],
+  ['GET', '/folders', 'Lista las carpetas con la cantidad de sobres de cada una.'],
+  ['POST', '/folders', 'Crea una carpeta: {"name"}.'],
+  ['PUT', '/folders/{id}', 'Renombra una carpeta: {"name"}.'],
+  ['DELETE', '/folders/{id}', 'Borra la carpeta; sus sobres quedan sin carpeta.'],
+  ['PUT', '/envelopes/{id}/folder', 'Mueve un sobre: {"folder_id": "<id>"} o null para sacarlo de la carpeta.'],
   ['GET', '/contacts?q=', 'Libreta de contactos (se completa sola con cada envío). Búsqueda opcional por nombre o email.'],
   ['POST', '/contacts', 'Agrega un contacto: {"name","email"}. Si el email ya existe, actualiza el nombre.'],
   ['PUT', '/contacts/{id}', 'Edita nombre y email de un contacto.'],
@@ -371,7 +376,7 @@ export function openapiSpec(config) {
       '/agent/token': { post: { summary: 'Obtener la clave una vez autorizada', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['device_code'], properties: { device_code: { type: 'string' } } } } } }, responses: { 200: { description: 'api_key' }, 428: err, 403: err, 400: err } } },
       '/me': { get: { summary: 'Cuenta actual', security: auth, responses: { 200: { description: 'Cuenta' }, 401: err } } },
       '/envelopes': {
-        get: { summary: 'Listar sobres', security: auth, parameters: [{ name: 'status', in: 'query', schema: { type: 'string' } }], responses: { 200: { description: 'Lista' }, 401: err } },
+        get: { summary: 'Listar sobres', security: auth, parameters: [{ name: 'status', in: 'query', schema: { type: 'string' } }, { name: 'folder_id', in: 'query', schema: { type: 'string' }, description: 'Id de carpeta o none' }, { name: 'q', in: 'query', schema: { type: 'string' } }], responses: { 200: { description: 'Lista' }, 401: err } },
         post: { summary: 'Crear y enviar un sobre', security: auth, parameters: [{ name: 'Idempotency-Key', in: 'header', schema: { type: 'string' } }], requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateEnvelope' } } } }, responses: { 201: envResp, 200: envResp, 400: err, 401: err, 402: err } },
       },
       '/envelopes/{id}': {
@@ -389,6 +394,15 @@ export function openapiSpec(config) {
       '/templates': { get: { summary: 'Listar plantillas', security: auth, responses: { 200: { description: 'Lista con roles' } } } },
       '/templates/{id}/envelopes': { post: { summary: 'Crear y enviar desde una plantilla', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['recipients'], properties: { recipients: { type: 'array', items: { $ref: '#/components/schemas/Recipient' } }, title: { type: 'string' }, message: { type: 'string' }, language: { type: 'string', enum: ['es', 'en', 'pt'] }, expire_days: { type: 'integer' }, reminder_days: { type: 'integer' }, send: { type: 'boolean', default: true } } } } } }, responses: { 201: envResp, 400: err, 402: err } } },
       '/templates/{id}/bulk': { post: { summary: 'Envío masivo desde una plantilla de un firmante', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['rows'], properties: { rows: { type: 'array', maxItems: 200, items: { type: 'object', properties: { name: { type: 'string' }, email: { type: 'string', format: 'email' } } } } } } } } }, responses: { 200: { description: 'Resultado por fila' }, 400: err } } },
+      '/folders': {
+        get: { summary: 'Listar carpetas', security: auth, responses: { 200: { description: 'Lista' } } },
+        post: { summary: 'Crear carpeta', security: auth, requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['name'], properties: { name: { type: 'string', maxLength: 60 } } } } } }, responses: { 201: { description: 'Carpeta' }, 409: err } },
+      },
+      '/folders/{id}': {
+        put: { summary: 'Renombrar carpeta', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['name'], properties: { name: { type: 'string', maxLength: 60 } } } } } }, responses: { 200: { description: 'Carpeta' }, 404: err, 409: err } },
+        delete: { summary: 'Borrar carpeta (los sobres quedan sin carpeta)', security: auth, parameters: [idParam], responses: { 200: { description: 'ok' }, 404: err } },
+      },
+      '/envelopes/{id}/folder': { put: { summary: 'Mover un sobre a una carpeta', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { folder_id: { type: ['string', 'null'], format: 'uuid' } } } } } }, responses: { 200: envResp, 404: err } } },
       '/contacts': {
         get: { summary: 'Listar contactos', security: auth, parameters: [{ name: 'q', in: 'query', schema: { type: 'string' } }], responses: { 200: { description: 'Lista' } } },
         post: { summary: 'Agregar contacto', security: auth, requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Contact' } } } }, responses: { 201: { description: 'Contacto' }, 400: err } },

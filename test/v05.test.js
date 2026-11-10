@@ -342,3 +342,50 @@ test('adjuntos: subir, validar, reemplazar, anexar al PDF final y sello íntegro
   const apiDl = await fetch(apiEnv.attachments[0].url.replace(t.config.appUrl, t.base), { headers: { authorization: `Bearer ${key}` } });
   assert.equal(apiDl.status, 200);
 });
+
+// ---------- Carpetas y búsqueda ----------
+
+test('carpetas: crear, renombrar, mover, filtrar y borrar sin perder sobres', async () => {
+  const create = (name) => owner('/api/carpetas', { method: 'POST', body: { name } });
+  const ventas = await (await create('Ventas')).json();
+  assert.equal((await create('Ventas')).status, 409, 'nombre repetido');
+  assert.equal((await create('  ')).status, 400);
+  const rrhh = await (await create('RR.HH.')).json();
+  assert.equal((await owner(`/api/carpetas/${rrhh.id}`, { method: 'PUT', body: { name: 'Ventas' } })).status, 409);
+  assert.equal((await owner(`/api/carpetas/${rrhh.id}`, { method: 'PUT', body: { name: 'Recursos Humanos' } })).status, 200);
+
+  const { id } = await (await owner('/api/sobres?title=Propuesta%20Acme', { method: 'POST', body: await samplePdf() })).json();
+  await owner(`/api/sobres/${id}`, { method: 'PUT', body: { title: 'Propuesta Acme', recipients: [{ key: 'a', name: 'Lucía Compradora', email: 'lucia@acme.com' }], fields: [] } });
+  assert.equal((await owner(`/api/sobres/${id}/carpeta`, { method: 'PUT', body: { folderId: ventas.id } })).status, 200);
+
+  const other = client(t.base);
+  await other('/api/auth/registro', { method: 'POST', body: { name: 'Ajeno', email: 'ajeno-fold@example.com', password: 'clave-ajena-larga' } });
+  const foreign = await (await other('/api/carpetas', { method: 'POST', body: { name: 'Mía' } })).json();
+  assert.equal((await owner(`/api/sobres/${id}/carpeta`, { method: 'PUT', body: { folderId: foreign.id } })).status, 404, 'no se usa una carpeta ajena');
+  assert.equal((await other(`/api/sobres/${id}/carpeta`, { method: 'PUT', body: { folderId: foreign.id } })).status, 404, 'no se mueve un sobre ajeno');
+  assert.equal((await other(`/api/carpetas/${ventas.id}`, { method: 'DELETE' })).status, 404);
+
+  const list = (await (await owner('/api/sobres')).json()).envelopes;
+  const env = list.find((e) => e.id === id);
+  assert.equal(env.folder_id, ventas.id);
+  assert.deepEqual(env.recipients, [{ name: 'Lucía Compradora', email: 'lucia@acme.com', role: 'signer' }]);
+  const folders = (await (await owner('/api/carpetas')).json()).data;
+  assert.equal(folders.find((f) => f.id === ventas.id).envelopes, 1);
+
+  const { key } = await (await owner('/api/claves', { method: 'POST', body: { name: 'fold' } })).json();
+  const h = { authorization: `Bearer ${key}` };
+  const byFolder = await (await fetch(`${t.base}/api/v1/envelopes?folder_id=${ventas.id}`, { headers: h })).json();
+  assert.deepEqual(byFolder.data.map((e) => e.id), [id]);
+  const byQuery = await (await fetch(`${t.base}/api/v1/envelopes?q=lucia@acme`, { headers: h })).json();
+  assert.deepEqual(byQuery.data.map((e) => e.id), [id]);
+  assert.equal(byQuery.data[0].signers_total, 1);
+  const none = await (await fetch(`${t.base}/api/v1/envelopes?folder_id=none&q=acme`, { headers: h })).json();
+  assert.equal(none.data.length, 0);
+  const moved = await fetch(`${t.base}/api/v1/envelopes/${id}/folder`, { method: 'PUT', headers: { ...h, 'content-type': 'application/json' }, body: JSON.stringify({ folder_id: rrhh.id }) });
+  assert.equal((await moved.json()).folder_id, rrhh.id);
+
+  assert.equal((await owner(`/api/carpetas/${rrhh.id}`, { method: 'DELETE' })).status, 200);
+  const after = (await (await owner('/api/sobres')).json()).envelopes.find((e) => e.id === id);
+  assert.ok(after, 'el sobre sigue existiendo');
+  assert.equal(after.folder_id, null, 'queda sin carpeta');
+});

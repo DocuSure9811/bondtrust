@@ -45,7 +45,7 @@ function say(text, ok = false) {
 }
 
 async function load() {
-  const { envelope: e, recipients, events, attachments } = await api(`/api/sobres/${id}`);
+  const [{ envelope: e, recipients, events, attachments }, { data: folders }] = await Promise.all([api(`/api/sobres/${id}`), api('/api/carpetas')]);
   if (e.status === 'draft') return location.replace(`/app/nuevo?id=${id}`);
   const byId = new Map(recipients.map((r) => [r.id, r]));
   const canCorrect = ['sent', 'declined', 'expired', 'voided'].includes(e.status);
@@ -54,7 +54,8 @@ async function load() {
   <div class="detail-head">
     <div><a href="/app" class="small">← Mis documentos</a><h1>${esc(e.title)}</h1>${pill(e.status)}
       <span class="muted small"> Enviado ${fmtDate(e.sent_at, true)}${e.completed_at ? ` · Completado ${fmtDate(e.completed_at, true)}` : ''}${e.status === 'sent' && e.expires_at ? ` · Vence ${fmtDate(e.expires_at)}` : ''}</span>
-      <p class="muted small">Idioma: ${LANG[e.language] || 'Español'} · ${e.reminder_days ? `Recordatorios cada ${e.reminder_days} día(s)` : 'Sin recordatorios'}${e.corrected_from ? ` · <a href="/app/sobres/${esc(e.corrected_from)}">Corrige un sobre anterior</a>` : ''}</p></div>
+      <p class="muted small">Idioma: ${LANG[e.language] || 'Español'} · ${e.reminder_days ? `Recordatorios cada ${e.reminder_days} día(s)` : 'Sin recordatorios'}${e.corrected_from ? ` · <a href="/app/sobres/${esc(e.corrected_from)}">Corrige un sobre anterior</a>` : ''}</p>
+      <label class="inline-select">Carpeta <select id="env-folder"><option value="">Sin carpeta</option>${folders.map((f) => `<option value="${f.id}"${f.id === e.folder_id ? ' selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label></div>
     <div class="detail-actions">
       ${e.status === 'completed' ? '<button class="btn btn-primary" data-dl="final">Descargar firmado</button>' : ''}
       <button class="btn btn-ghost" data-dl="original">Descargar original</button>
@@ -82,6 +83,14 @@ async function load() {
 
   const on = (sel, fn) => root.querySelectorAll(sel).forEach((b) => b.addEventListener('click', () => fn(b).catch((err) => { say(err.message); b.disabled = false; })));
   on('[data-dl]', (b) => download(b.dataset.dl, e.title));
+  root.querySelector('#env-folder').addEventListener('change', async (ev) => {
+    try {
+      await api(`/api/sobres/${id}/carpeta`, { method: 'PUT', body: { folderId: ev.target.value || null } });
+      say('Carpeta actualizada.', true);
+    } catch (err) {
+      say(err.message);
+    }
+  });
   on('[data-attachment]', async (b) => {
     const res = await api(`/api/sobres/${id}/adjuntos/${b.dataset.attachment}`, { raw: true });
     const a = document.createElement('a');
