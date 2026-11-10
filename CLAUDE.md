@@ -26,9 +26,9 @@ El token no se guarda en la config de git. Se lee de [.env](.env) y se pasa por 
 (cargar antes `.env` con `set -a; . ./.env; set +a`). Repo: https://github.com/DocuSure9811/bondtrust
 
 ## Stack
-Node 22 (ESM) + Express, tests con `node --test`. Render (servidor), Supabase (Postgres + Storage), Resend (mails), UptimeRobot (ping).
-- **Base provisoria:** Postgres free de Render `docsure-db` (vence 2026-12-09). Migrar a Supabase cambiando `DATABASE_URL` antes de esa fecha.
-- **Tests:** corren en el build de Render (`npm ci && npm test`) contra un esquema temporal en `TEST_DATABASE_URL` (URL **interna**: el build tiene red privada; la base no acepta conexiones externas). Si fallan, el deploy no sale. Ver resultados en los logs de build por API (`GET /v1/logs?type=build`).
+Node 22 (ESM) + Express, tests con `node --test`. Render (servidor), Supabase (Postgres), Resend (mails), UptimeRobot (ping).
+- **Base:** Supabase Postgres, proyecto `docsure` (us-west-2, misma región que Render), conexión por el pooler en modo sesión (IPv4, puerto 5432). La API de datos de Supabase (PostgREST) está desactivada para `public` y `anon`/`authenticated` no tienen permisos: solo la app accede.
+- **Tests:** corren en el build de Render (`npm ci && npm test`) contra un esquema temporal en `TEST_DATABASE_URL` (la misma base de Supabase; cada corrida crea y borra su esquema). Si fallan, el deploy no sale. Ver resultados en los logs de build por API (`GET /v1/logs?type=build`).
 - **Emails:** sin `RESEND_API_KEY` quedan en la bandeja `/admin/correos` (Basic auth, contraseña `ADMIN_TOKEN`).
 - **API pública v1** (`src/api-v1.js`, Bearer `ds_live_…`): claves en `/app/api`, flujo de dispositivo para agentes de IA (`/api/v1/agent/connect` + `/app/conectar`), webhooks salientes firmados HMAC con protección SSRF. Documentación generada desde `src/web/devdocs.js`: `/desarrolladores`, `/llms.txt`, `/openapi.json` — mantener las tres al día con cada cambio de la API.
 - **Tareas programadas** (`runScheduler` en `src/services/envelopes.js`): vencimientos y recordatorios cada 10 min dentro del proceso web. En el plan free de Render el servicio duerme sin tráfico, así que conviene un ping externo (UptimeRobot) para que corran a horario.
