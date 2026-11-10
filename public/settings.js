@@ -11,7 +11,7 @@ controls.forEach((c) => { c.disabled = true; });
 function fill(s) {
   form.name.value = s.name;
   form.company.value = s.company || '';
-  form.brand_color.value = s.brand_color || '#0e7c66';
+  form.brand_color.value = s.brand_color || '#1f4e9c';
   preview.innerHTML = s.logo_url ? `<img alt="Tu logo" src="${esc(s.logo_url)}?t=${Date.now()}">` : '<p class="muted small">Sin logo: se muestra el nombre de tu empresa.</p>';
   delBtn.hidden = !s.logo_url;
 }

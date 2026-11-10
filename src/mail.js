@@ -83,7 +83,7 @@ const T = {
   },
 };
 
-const DEFAULT_BRAND = { name: 'DocSure', color: '#0e7c66', logoUrl: null };
+const DEFAULT_BRAND = { name: 'DocSure', color: '#1f4e9c', logoUrl: null };
 
 function layout({ title, intro, buttonText, buttonUrl, outro = '', brand = DEFAULT_BRAND, lang = 'es' }) {
   const color = /^#[0-9a-f]{6}$/i.test(brand.color || '') ? brand.color : DEFAULT_BRAND.color;
@@ -93,22 +93,22 @@ function layout({ title, intro, buttonText, buttonUrl, outro = '', brand = DEFAU
   const button = buttonUrl
     ? `<p style="margin:28px 0"><a href="${escapeHtml(buttonUrl)}" style="background:${color};color:#ffffff;text-decoration:none;padding:14px 26px;border-radius:10px;font-weight:600;display:inline-block">${escapeHtml(buttonText)}</a></p>`
     : '';
-  return `<!doctype html><html lang="${lang}"><body style="margin:0;background:#f4f7f6;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#10231e">
+  return `<!doctype html><html lang="${lang}"><body style="margin:0;background:#f3f5f8;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#16202c">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;padding:32px;border-top:4px solid ${color}">
 <tr><td>${head}</td></tr>
 <tr><td><h1 style="font-size:22px;margin:24px 0 12px">${escapeHtml(title)}</h1>
 <div style="font-size:15px;line-height:1.6">${intro}</div>${button}
-<div style="font-size:13px;line-height:1.6;color:#4b5f59">${outro}</div></td></tr>
+<div style="font-size:13px;line-height:1.6;color:#56606e">${outro}</div></td></tr>
 </table>
-<p style="font-size:12px;color:#6b7d78;margin-top:16px">${T[lang].footer}</p>
+<p style="font-size:12px;color:#717b88;margin-top:16px">${T[lang].footer}</p>
 </td></tr></table></body></html>`;
 }
 
 export const templates = {
   signRequest({ lang, brand, senderName, recipientName, title, message, url, accessCode, accessUrl, expiresAt, reminder = false }) {
     const t = T[langOf(lang)];
-    const note = message ? `<p style="background:#f4f7f6;border-radius:10px;padding:12px 16px">“${escapeHtml(message)}”</p>` : '';
+    const note = message ? `<p style="background:#f3f5f8;border-radius:10px;padding:12px 16px">“${escapeHtml(message)}”</p>` : '';
     return {
       subject: reminder ? t.remindSubject(senderName, title) : t.signSubject(senderName, title),
       html: layout({

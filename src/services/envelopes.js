@@ -56,7 +56,7 @@ const ENV_MAIL_SQL = `SELECT e.id, e.title, e.message, e.status, e.sequential, e
 export function brandOf(ctx, row) {
   return {
     name: row.owner_company || 'DocSure',
-    color: row.brand_color || '#0e7c66',
+    color: row.brand_color || '#1f4e9c',
     logoUrl: row.has_logo ? `${ctx.config.appUrl}/marca/${row.owner_id}` : null,
   };
 }

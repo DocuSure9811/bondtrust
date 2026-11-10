@@ -9,9 +9,9 @@ const { P12Signer } = require('@signpdf/signer-p12');
 const { pdflibAddPlaceholder } = require('@signpdf/placeholder-pdf-lib');
 
 const MAX_PAGES = 200;
-const BRAND = rgb(0.055, 0.486, 0.4);
-const INK = rgb(0.063, 0.137, 0.118);
-const MUTED = rgb(0.29, 0.37, 0.35);
+const BRAND = rgb(0.122, 0.306, 0.612);
+const INK = rgb(0.086, 0.125, 0.173);
+const MUTED = rgb(0.337, 0.376, 0.431);
 
 export async function inspectPdf(bytes) {
   if (!bytes?.length || bytes.subarray(0, 5).toString('latin1') !== '%PDF-') {
@@ -196,7 +196,7 @@ class Writer {
 
   rule() {
     this.ensure(10);
-    this.page.drawLine({ start: { x: 40, y: this.y + 4 }, end: { x: 555, y: this.y + 4 }, thickness: 0.6, color: rgb(0.85, 0.89, 0.88) });
+    this.page.drawLine({ start: { x: 40, y: this.y + 4 }, end: { x: 555, y: this.y + 4 }, thickness: 0.6, color: rgb(0.85, 0.87, 0.9) });
     this.gap(8);
   }
 }
@@ -281,7 +281,7 @@ async function addCertificate(pdf, { envelope, owner, recipients, events, siteUr
         }
         const scale = Math.min(160 / img.width, 40 / img.height);
         w.ensure(48);
-        w.page.drawRectangle({ x: 40, y: w.y - 40, width: 170, height: 46, borderColor: rgb(0.85, 0.89, 0.88), borderWidth: 0.6 });
+        w.page.drawRectangle({ x: 40, y: w.y - 40, width: 170, height: 46, borderColor: rgb(0.85, 0.87, 0.9), borderWidth: 0.6 });
         w.page.drawImage(img, { x: 45, y: w.y - 37, width: img.width * scale, height: img.height * scale });
         w.gap(50);
       }

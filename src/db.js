@@ -272,6 +272,9 @@ CREATE TABLE IF NOT EXISTS account_events (
 );
 CREATE INDEX IF NOT EXISTS account_events_user_idx ON account_events (user_id, id DESC);
 
+-- v0.6: la marca por defecto pasó de verde a azul; quien guardó el verde por defecto vuelve al nuevo
+UPDATE users SET brand_color = NULL WHERE brand_color = '#0e7c66';
+
 -- v0.5: contactos
 CREATE TABLE IF NOT EXISTS contacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

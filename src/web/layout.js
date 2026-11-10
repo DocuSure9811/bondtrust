@@ -1,6 +1,6 @@
 import { escapeHtml } from '../validate.js';
 
-export const LOGO_SVG = `<svg class="logo-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" fill="#0e7c66"/><path d="M10 6.5h8.2l5.3 5.3V25a1.5 1.5 0 0 1-1.5 1.5H10A1.5 1.5 0 0 1 8.5 25V8A1.5 1.5 0 0 1 10 6.5z" fill="#fff"/><path d="M12.4 18.6l2.7 2.7 5.3-5.8" stroke="#0e7c66" stroke-width="2.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+export const LOGO_SVG = `<svg class="logo-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" fill="#1f4e9c"/><path d="M10 6.5h8.2l5.3 5.3V25a1.5 1.5 0 0 1-1.5 1.5H10A1.5 1.5 0 0 1 8.5 25V8A1.5 1.5 0 0 1 10 6.5z" fill="#fff"/><path d="M12.4 18.6l2.7 2.7 5.3-5.8" stroke="#1f4e9c" stroke-width="2.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 const NAV = [
   {
@@ -146,7 +146,7 @@ ${noindex ? '<meta name="robots" content="noindex, nofollow">' : `<link rel="can
 <meta property="og:image:alt" content="DocSure: firma electrónica con sello digital">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="${config.appUrl}/static/og.png">
-<meta name="theme-color" content="#0e7c66">
+<meta name="theme-color" content="#1f4e9c">
 <link rel="icon" href="/static/favicon.svg?v=${v}" type="image/svg+xml">
 <link rel="stylesheet" href="/static/site.css?v=${v}">
 ${ld}
