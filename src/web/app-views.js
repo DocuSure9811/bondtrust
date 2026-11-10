@@ -188,6 +188,12 @@ export function apiPage(config, user) {
     <ul class="rlist" id="keys"></ul>
   </section>
   <section class="card">
+    <div class="card-head"><h2>Firma embebida</h2></div>
+    <p class="muted small">Mostrá la firma dentro de tu sitio o app con <code>&lt;docsure-signing&gt;</code>. Indicá los dominios que pueden mostrarla (uno por línea, ej. <code>https://app.tuempresa.com</code>).</p>
+    <form id="embed-form" novalidate><label class="visually-hidden" for="embed-origins">Dominios autorizados</label><textarea id="embed-origins" rows="3" maxlength="1000" placeholder="https://app.tuempresa.com"></textarea>
+    <p class="form-error" role="alert" id="embed-msg"></p><button class="btn btn-primary btn-sm" type="submit">Guardar dominios</button></form>
+  </section>
+  <section class="card">
     <div class="card-head"><h2>Webhooks</h2></div>
     <p class="muted small">Te avisamos por HTTPS cuando algo cambia. Cada aviso va firmado con HMAC-SHA256 en <code>DocSure-Signature</code>.</p>
     <form id="hook-form" class="inline-form"><label class="visually-hidden" for="hook-url">URL del webhook</label><input id="hook-url" type="url" maxlength="500" placeholder="https://tu-app.com/webhooks/docsure" required><button class="btn btn-primary" type="submit">Agregar webhook</button></form>

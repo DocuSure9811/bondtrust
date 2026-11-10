@@ -89,6 +89,23 @@ if (meta) {
   else identityStep();
 }
 
+/** Avisa a la página que contiene la firma embebida (embed.js). No envía datos personales. */
+function notifyParent(type) {
+  if (window.parent !== window) window.parent.postMessage({ source: 'docsure', type }, '*');
+}
+
+async function embeddedStart() {
+  step = 'identity';
+  card(`<p class="muted">${t.loadingDoc}</p>`);
+  try {
+    session = (await api(`${base}/embebido`, { method: 'POST' })).session;
+    await documentStep();
+    notifyParent('loaded');
+  } catch (e) {
+    fatal(e);
+  }
+}
+
 function inPersonStep() {
   step = 'identity';
   card(`<span class="ic ic-shield" aria-hidden="true"></span><h1>${t.inPersonTitle}</h1>
@@ -108,6 +125,7 @@ function inPersonStep() {
 function identityStep() {
   step = 'identity';
   if (meta.inPerson) return inPersonStep();
+  if (meta.embedded) return embeddedStart();
   card(`<h1>${esc(t.hello(meta.recipientName))}</h1>
     <p>${t.sentYou(esc(meta.senderName), esc(meta.title))}</p>
     <p class="muted">${t.protect(esc(meta.emailMasked))}</p>
@@ -467,6 +485,7 @@ async function finish() {
     await api(`${base}/firmar`, { method: 'POST', headers: { 'X-Sign-Session': session }, body: { signature, initials, values, consent: true } });
     document.querySelector('.sign-bar').remove();
     step = 'done';
+    notifyParent('signed');
     card(`<span class="ic ic-shield" aria-hidden="true"></span><h1>${t.doneTitle}</h1><p class="muted">${t.doneText}</p><a class="btn btn-ghost" href="/">${t.knowDocsure}</a>`);
     window.scrollTo({ top: 0 });
   } catch (e) {
@@ -499,6 +518,7 @@ function openDecline() {
       dlg.remove();
       document.querySelector('.sign-bar')?.remove();
       step = 'done';
+      notifyParent('declined');
       card(`<h1>${t.declinedTitle}</h1><p class="muted">${t.declinedText}</p>`);
     } catch (ex) {
       dlg.querySelector('#decline-err').textContent = errMsg(ex);

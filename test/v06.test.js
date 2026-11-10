@@ -145,3 +145,53 @@ test('documentos de imagen y detección de campos de formularios PDF', async () 
   assert.ok(!left.some((n) => ['Nombre completo', 'Acepto', 'Provincia', 'Plan'].includes(n)), `el formulario original queda aplanado (quedan: ${left})`);
   assert.equal(left.length, 1, 'solo queda el campo del sello digital');
 });
+
+test('firma embebida: dominios, enlaces por API, iframe autorizado, sin email y certificado', async () => {
+  const { key } = await (await owner('/api/claves', { method: 'POST', body: { name: 'embed' } })).json();
+  const v1 = (p, method = 'GET', body) => fetch(`${t.base}/api/v1${p}`, { method, headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: body && JSON.stringify(body) });
+  assert.equal((await v1('/settings/embed-origins', 'PUT', { origins: ['javascript:alert(1)'] })).status, 400);
+  assert.equal((await v1('/settings/embed-origins', 'PUT', { origins: ['https://app.cliente.com/', 'https://app.cliente.com'] })).status, 200);
+  assert.deepEqual((await (await v1('/settings/embed-origins')).json()).embed_origins, ['https://app.cliente.com']);
+
+  const b64 = (await samplePdf()).toString('base64');
+  const res = await v1('/envelopes', 'POST', { title: 'Embebido', document_base64: b64, delivery: 'embedded', recipients: [{ name: 'Emb Firma', email: 'emb@example.com' }] });
+  assert.equal(res.status, 201, await res.clone().text());
+  const envl = await res.json();
+  assert.equal(envl.delivery, 'embedded');
+  assert.equal(envl.signing_urls.length, 1);
+  assert.equal((await outbox(t.pool, 'invite', 'emb@example.com')).length, 0, 'sin email de invitación');
+  const first = new URL(envl.signing_urls[0].url);
+  assert.equal(first.searchParams.get('embed'), '1');
+  const token1 = first.pathname.split('/').pop();
+
+  // Un enlace nuevo invalida el anterior
+  const again = await (await v1(`/envelopes/${envl.id}/recipients/${envl.signing_urls[0].recipient_id}/signing-url`, 'POST')).json();
+  const token = new URL(again.url).pathname.split('/').pop();
+  assert.equal((await fetch(`${t.base}/api/firmar/${token1}`)).status, 404);
+
+  const page = await fetch(`${t.base}/firmar/${token}?embed=1`);
+  assert.match(page.headers.get('content-security-policy'), /frame-ancestors https:\/\/app\.cliente\.com/);
+  assert.equal(page.headers.get('x-frame-options'), null);
+  const plain = await fetch(`${t.base}/firmar/${token}`);
+  assert.equal(plain.headers.get('x-frame-options'), 'DENY', 'sin ?embed=1 no se puede enmarcar');
+  assert.match(plain.headers.get('content-security-policy'), /frame-ancestors 'none'/);
+
+  const signer = client(t.base);
+  assert.equal((await (await signer(`/api/firmar/${token}`)).json()).embedded, true);
+  const { session } = await (await signer(`/api/firmar/${token}/embebido`, { method: 'POST' })).json();
+  assert.ok(session);
+  const signed = await signer(`/api/firmar/${token}/firmar`, { method: 'POST', headers: { 'x-sign-session': session }, body: { signature: PNG, consent: true } });
+  assert.equal(signed.status, 200, await signed.clone().text());
+  const done = await (await v1(`/envelopes/${envl.id}`)).json();
+  assert.equal(done.status, 'completed');
+  assert.ok(done.events.some((e) => e.type === 'embedded_verified'));
+
+  // Un sobre común no admite la sesión embebida ni enlaces por API
+  const normal = await (await v1('/envelopes', 'POST', { title: 'Normal', document_base64: b64, recipients: [{ name: 'Normal', email: 'normal-emb@example.com' }] })).json();
+  const normalToken = linkFrom((await outbox(t.pool, 'invite', 'normal-emb@example.com'))[0]);
+  assert.equal((await client(t.base)(`/api/firmar/${normalToken}/embebido`, { method: 'POST' })).status, 403);
+  assert.equal((await v1(`/envelopes/${normal.id}/recipients/${normal.recipients[0].id}/signing-url`, 'POST')).status, 409);
+  const js = await fetch(`${t.base}/embed.js`);
+  assert.match(js.headers.get('content-type'), /javascript/);
+  assert.match(await js.text(), /docsure-signing/);
+});

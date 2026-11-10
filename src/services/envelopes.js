@@ -50,7 +50,7 @@ function newAccessCode() {
 const formatCode = (c) => `${c.slice(0, 4)}-${c.slice(4, 8)}-${c.slice(8)}`;
 
 /** Datos del sobre y de la marca del remitente para los emails. */
-const ENV_MAIL_SQL = `SELECT e.id, e.title, e.message, e.status, e.sequential, e.expires_at, e.language, e.owner_id,
+const ENV_MAIL_SQL = `SELECT e.id, e.title, e.message, e.status, e.sequential, e.expires_at, e.language, e.owner_id, e.delivery,
        u.name AS owner_name, u.company AS owner_company, u.brand_color, (u.brand_logo IS NOT NULL) AS has_logo
   FROM envelopes e JOIN users u ON u.id = e.owner_id WHERE e.id = $1`;
 
@@ -166,7 +166,7 @@ export async function ownedEnvelope(db, ownerId, id, { lock = false } = {}) {
   const { rows } = await db.query(
     `SELECT id, owner_id, title, message, status, sequential, page_count, original_sha256, final_sha256,
             send_idempotency_key, expires_at, sent_at, completed_at, created_at, language, expire_days,
-            reminder_days, corrected_from, template_id, documents, folder_id
+            reminder_days, corrected_from, template_id, documents, folder_id, delivery
        FROM envelopes WHERE id = $1 AND owner_id = $2 ${lock ? 'FOR UPDATE' : ''}`,
     [id, ownerId],
   );
@@ -294,6 +294,8 @@ export async function dispatchStage(ctx, envelopeId) {
   for (const s of stage) {
     const { rowCount } = await ctx.pool.query(`UPDATE recipients SET status = 'sent' WHERE id = $1 AND status = 'created'`, [s.id]);
     if (rowCount === 0) continue;
+    // En la firma embebida no se envían invitaciones: la app del remitente pide el enlace por API.
+    if (env.delivery === 'embedded') continue;
     const creds = await issueCredentials(ctx, ctx.pool, s.id, env.expires_at);
     await inviteRecipient(ctx, env, s, creds, `invite:${s.id}`);
   }
@@ -320,6 +322,7 @@ async function inviteRecipient(ctx, env, recipient, { token, code }, dedupeKey, 
 export async function resendInvite(ctx, ownerId, envelopeId, recipientId) {
   const env = await ownedEnvelope(ctx.pool, ownerId, envelopeId);
   if (env.status !== 'sent') throw new HttpError(409, 'Solo se puede reenviar un sobre en curso.', 'not_sent');
+  if (env.delivery === 'embedded') throw new HttpError(409, 'Los sobres embebidos no se envían por email: pedí un enlace nuevo con signing-url.', 'embedded');
   const { rows: [r] } = await ctx.pool.query(
     `SELECT r.id, r.name, r.email, r.status,
             (SELECT max(created_at) FROM events ev WHERE ev.recipient_id = r.id AND ev.type IN ('email_sent', 'resent')) AS last_sent
@@ -422,7 +425,7 @@ export async function resolveToken(ctx, token, { forUpdate = false, db = ctx.poo
     throw new HttpError(404, 'El enlace no es válido.', 'invalid_link');
   }
   const { rows: [r] } = await db.query(
-    `SELECT r.*, e.title, e.status AS envelope_status, e.page_count, e.language, e.owner_id,
+    `SELECT r.*, e.title, e.status AS envelope_status, e.page_count, e.language, e.owner_id, e.delivery,
             u.name AS owner_name, u.company AS owner_company, u.brand_color, (u.brand_logo IS NOT NULL) AS has_logo
        FROM recipients r JOIN envelopes e ON e.id = r.envelope_id JOIN users u ON u.id = e.owner_id
       WHERE ${isCode ? 'r.access_code_hash' : 'r.token_hash'} = $1 ${forUpdate ? 'FOR UPDATE OF r' : ''}`,
@@ -456,6 +459,7 @@ export async function openSigning(ctx, token, meta) {
     language: langOf(r.language),
     brand: brandOf(ctx, r),
     inPerson: Boolean(r.in_person_by),
+    embedded: r.delivery === 'embedded',
   };
 }
 
@@ -661,7 +665,7 @@ async function advance(ctx, envelopeId) {
 /** Genera el PDF final sellado y notifica. Idempotente: solo una ejecución puede completar el sobre. */
 export async function completeEnvelope(ctx, envelopeId) {
   const { rows: [envelope] } = await ctx.pool.query(
-    `SELECT id, title, status, page_count, original_pdf, original_sha256, created_at, sent_at, owner_id, documents FROM envelopes WHERE id = $1`,
+    `SELECT id, title, status, page_count, original_pdf, original_sha256, created_at, sent_at, owner_id, documents, delivery FROM envelopes WHERE id = $1`,
     [envelopeId],
   );
   if (!envelope || envelope.status !== 'sent') return;
@@ -769,6 +773,7 @@ export async function apiEnvelope(ctx, ownerId, id) {
     title: e.title,
     message: e.message,
     status: e.status,
+    delivery: e.delivery,
     folder_id: e.folder_id,
     sequential: e.sequential,
     page_count: e.page_count,
@@ -812,6 +817,8 @@ export async function createFromApi(ctx, owner, body, idempotencyKey, meta) {
   try {
     for (const d of docsIn ? docsIn.slice(1) : []) ({ pageCount } = await appendDocument(ctx, owner.id, id, { name: d?.name, pdf: decodePdf(d?.document_base64) }));
     if (key) await ctx.pool.query('UPDATE envelopes SET create_idempotency_key = $2 WHERE id = $1', [id, key]);
+    if (body.delivery !== undefined && !['email', 'embedded'].includes(body.delivery)) throw new HttpError(400, 'delivery debe ser "email" o "embedded".', 'validation');
+    if (body.delivery === 'embedded') await ctx.pool.query(`UPDATE envelopes SET delivery = 'embedded' WHERE id = $1`, [id]);
     const recipients = recipientsIn.map((r, i) => ({ key: `r${i}`, name: r?.name, email: r?.email, role: r?.role === 'cc' ? 'cc' : 'signer', order: r?.order ?? i + 1 }));
     const fields = Array.isArray(body.fields) && body.fields.length
       ? body.fields.map((f) => {
@@ -895,6 +902,57 @@ export async function extendExpiration(ctx, ownerId, id, days, meta) {
   });
 }
 
+/**
+ * Firma embebida: la app del remitente (autenticada con su clave de API) pide un enlace de firma para un
+ * destinatario al que le toca firmar. Cada pedido invalida el enlace anterior.
+ */
+export async function embeddedSigningUrl(ctx, ownerId, envelopeId, recipientId) {
+  const env = await ownedEnvelope(ctx.pool, ownerId, envelopeId);
+  if (env.delivery !== 'embedded') throw new HttpError(409, 'El sobre no es embebido: creá el sobre con "delivery": "embedded".', 'not_embedded');
+  if (env.status !== 'sent') throw new HttpError(409, 'El sobre no está en curso.', 'not_sent');
+  if (!/^[0-9a-f-]{36}$/i.test(String(recipientId))) throw new HttpError(404, 'Destinatario no encontrado.', 'not_found');
+  const { rows: [r] } = await ctx.pool.query(`SELECT id, status FROM recipients WHERE id = $1 AND envelope_id = $2 AND role = 'signer'`, [recipientId, envelopeId]);
+  if (!r) throw new HttpError(404, 'Destinatario no encontrado.', 'not_found');
+  if (!['sent', 'viewed'].includes(r.status)) throw new HttpError(409, r.status === 'created' ? 'Todavía no le toca firmar a este destinatario.' : 'Este destinatario ya no tiene una firma pendiente.', 'not_pending');
+  const { token } = await issueCredentials(ctx, ctx.pool, r.id, env.expires_at, ', otp_hash = NULL, sign_session_hash = NULL');
+  await addEvent(ctx.pool, envelopeId, 'embedded_link', { recipientId: r.id });
+  return { recipient_id: r.id, url: `${ctx.config.appUrl}/firmar/${token}?embed=1`, expires_at: env.expires_at };
+}
+
+/** Enlaces de todos los destinatarios a los que hoy les toca firmar. */
+export async function embeddedSigningUrls(ctx, ownerId, envelopeId) {
+  const { rows } = await ctx.pool.query(`SELECT id FROM recipients WHERE envelope_id = $1 AND role = 'signer' AND status IN ('sent', 'viewed') ORDER BY position`, [envelopeId]);
+  const out = [];
+  for (const r of rows) out.push(await embeddedSigningUrl(ctx, ownerId, envelopeId, r.id));
+  return out;
+}
+
+/** En la firma embebida la identidad la garantiza la app del remitente: se abre la sesión sin código por email. */
+export async function embeddedSession(ctx, token, meta) {
+  const r = await resolveToken(ctx, token);
+  if (r.delivery !== 'embedded') throw new HttpError(403, 'Este sobre requiere verificar tu identidad con un código.', 'not_embedded');
+  const session = randomToken();
+  await ctx.pool.query(
+    `UPDATE recipients SET verified_at = now(), sign_session_hash = $2,
+            sign_session_expires_at = now() + interval '${SIGN_SESSION_MINUTES} minutes' WHERE id = $1`,
+    [r.id, hmac(ctx.config.tokenSecret, `sess:${session}`)],
+  );
+  await addEvent(ctx.pool, r.envelope_id, 'embedded_verified', { recipientId: r.id, ...meta });
+  return { session };
+}
+
+/** Dominios autorizados a mostrar la firma de este token dentro de un iframe (vacío si no es embebido). */
+export async function embedOriginsFor(ctx, token) {
+  try {
+    const r = await resolveToken(ctx, token);
+    if (r.delivery !== 'embedded') return [];
+    const { rows: [u] } = await ctx.pool.query('SELECT embed_origins FROM users WHERE id = $1', [r.owner_id]);
+    return u?.embed_origins || [];
+  } catch {
+    return [];
+  }
+}
+
 /** Firma en persona: el remitente abre la firma en su dispositivo y su sesión atestigua la identidad. */
 export async function startInPerson(ctx, ownerId, envelopeId, recipientId) {
   const env = await ownedEnvelope(ctx.pool, ownerId, envelopeId);
@@ -943,7 +1001,7 @@ export async function runScheduler(ctx) {
   const { rows: due } = await ctx.pool.query(
     `SELECT r.id, r.name, r.email, r.envelope_id FROM recipients r JOIN envelopes e ON e.id = r.envelope_id
       WHERE e.status = 'sent' AND e.reminder_days > 0 AND r.role = 'signer' AND r.status IN ('sent', 'viewed')
-        AND r.in_person_by IS NULL AND r.reminders_sent < $1
+        AND r.in_person_by IS NULL AND e.delivery = 'email' AND r.reminders_sent < $1
         AND r.last_notified_at < now() - make_interval(days => e.reminder_days)
       LIMIT 200`,
     [MAX_REMINDERS],

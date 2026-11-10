@@ -295,6 +295,8 @@ export function createApp({ pool, config, mailer }) {
   app.get('/api/ajustes', requireUser, asyncRoute(async (req, res) => res.json(await account.getSettings(ctx, req.user.id))));
   app.put('/api/ajustes', requireUser, json, asyncRoute(async (req, res) => res.json(await account.updateSettings(ctx, req.user.id, req.body))));
   app.put('/api/ajustes/logo', requireUser, logoBody, asyncRoute(async (req, res) => res.json(await account.setLogo(ctx, req.user.id, req.body))));
+  app.get('/api/ajustes/embebido', requireUser, asyncRoute(async (req, res) => res.json(await account.getEmbedOrigins(ctx, req.user.id))));
+  app.put('/api/ajustes/embebido', requireUser, json, asyncRoute(async (req, res) => res.json(await account.setEmbedOrigins(ctx, req.user.id, req.body.origins))));
   app.delete('/api/ajustes/logo', requireUser, asyncRoute(async (req, res) => res.json(await account.deleteLogo(ctx, req.user.id))));
   app.get('/marca/:id', asyncRoute(async (req, res, next) => {
     const logo = await account.getLogo(ctx, req.params.id);
@@ -316,7 +318,21 @@ export function createApp({ pool, config, mailer }) {
   }));
 
   // ---------- Firmante ----------
-  app.get('/firmar/:token', (req, res) => html(res, views.signPage(config)));
+  app.get('/firmar/:token', asyncRoute(async (req, res) => {
+    // Firma embebida: solo los dominios que autorizó el remitente pueden mostrarla en un iframe.
+    if (req.query.embed === '1') {
+      const origins = await env.embedOriginsFor(ctx, req.params.token);
+      if (origins.length) {
+        res.removeHeader('X-Frame-Options');
+        res.set('Content-Security-Policy', String(res.get('Content-Security-Policy')).replace("frame-ancestors 'none'", `frame-ancestors ${origins.join(' ')}`));
+      }
+    }
+    html(res, views.signPage(config));
+  }));
+  app.get('/embed.js', (req, res) => {
+    res.set({ 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*', 'Cross-Origin-Resource-Policy': 'cross-origin' });
+    res.sendFile(path.join(ROOT, 'public', 'embed.js'));
+  });
   app.get(
     '/documento/:token',
     asyncRoute(async (req, res) => {
@@ -498,6 +514,10 @@ export function createApp({ pool, config, mailer }) {
   app.get('/api/sobres/:id/adjuntos/:aid', requireUser, asyncRoute(async (req, res) => {
     const a = await attachments.ownerAttachment(ctx, req.user.id, req.params.id, req.params.aid);
     sendFile(res, a);
+  }));
+  app.post('/api/firmar/:token/embebido', asyncRoute(async (req, res) => {
+    signLimit(req, 'sign-embed', 120, 3600_000);
+    res.json(await env.embeddedSession(ctx, req.params.token, clientMeta(req)));
   }));
   app.post('/api/firmar/:token/presencial', asyncRoute(async (req, res) => {
     res.json(await env.inPersonSession(ctx, req.params.token, req.user, clientMeta(req)));

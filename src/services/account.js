@@ -10,6 +10,23 @@ export async function getSettings(ctx, userId) {
   return { ...u, logo_url: u.has_logo ? `/marca/${userId}` : null };
 }
 
+/** Dominios (https) que pueden mostrar la firma embebida en un iframe. */
+export async function setEmbedOrigins(ctx, userId, list) {
+  const items = Array.isArray(list) ? list : String(list || '').split(/[\s,]+/);
+  const origins = [...new Set(items.map((o) => String(o).trim().replace(/\/+$/, '').toLowerCase()).filter(Boolean))];
+  if (origins.length > 10) throw new HttpError(400, 'Máximo 10 dominios.', 'validation');
+  for (const o of origins) {
+    if (!/^https:\/\/[a-z0-9.-]+(:\d{2,5})?$/.test(o) && !/^http:\/\/localhost(:\d{2,5})?$/.test(o)) throw new HttpError(400, `${o} no es un origen válido. Usá https://tu-dominio.com (sin rutas).`, 'validation');
+  }
+  await ctx.pool.query('UPDATE users SET embed_origins = $2 WHERE id = $1', [userId, origins]);
+  return { embed_origins: origins };
+}
+
+export async function getEmbedOrigins(ctx, userId) {
+  const { rows: [u] } = await ctx.pool.query('SELECT embed_origins FROM users WHERE id = $1', [userId]);
+  return { embed_origins: u.embed_origins };
+}
+
 export async function updateSettings(ctx, userId, body) {
   const name = cleanText(body.name, { max: 120, field: 'tu nombre' });
   const company = cleanText(body.company ?? '', { max: 120, field: 'la empresa', required: false });

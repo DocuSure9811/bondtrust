@@ -275,6 +275,10 @@ ALTER TABLE fields DROP CONSTRAINT IF EXISTS fields_type_check;
 ALTER TABLE fields ADD CONSTRAINT fields_type_check CHECK (type IN ('signature', 'initials', 'date', 'name', 'email', 'text', 'checkbox', 'select', 'attachment', 'radio', 'multiple', 'number', 'phone', 'image', 'stamp'));
 ALTER TABLE fields ADD COLUMN IF NOT EXISTS formula text;
 
+-- v0.6: firma embebida
+ALTER TABLE envelopes ADD COLUMN IF NOT EXISTS delivery text NOT NULL DEFAULT 'email';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS embed_origins text[] NOT NULL DEFAULT '{}';
+
 -- v0.6: la marca por defecto pasó de verde a azul; quien guardó el verde por defecto vuelve al nuevo
 UPDATE users SET brand_color = NULL WHERE brand_color = '#0e7c66';
 

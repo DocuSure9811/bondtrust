@@ -164,6 +164,9 @@ const ENDPOINTS = [
   ['POST', '/envelopes/{id}/void', 'Anula un sobre en curso. Los anulados no consumen cupo.'],
   ['POST', '/envelopes/{id}/correct', 'Corrige: anula el sobre (si está en curso) y crea un borrador idéntico para editar y reenviar.'],
   ['POST', '/envelopes/{id}/extend', 'Extiende el vencimiento: {"days": 1-120} desde hoy.'],
+  ['POST', '/envelopes/{id}/recipients/{recipient_id}/signing-url', 'Firma embebida: enlace de firma para un destinatario al que le toca firmar (invalida el anterior).'],
+  ['GET', '/settings/embed-origins', 'Dominios autorizados para mostrar la firma embebida.'],
+  ['PUT', '/settings/embed-origins', 'Define los dominios: {"origins": ["https://app.tuempresa.com"]} (máx. 10).'],
   ['POST', '/envelopes/{id}/recipients/{recipient_id}/resend', 'Reenvía la invitación (el enlace anterior deja de funcionar).'],
   ['GET', '/envelopes/{id}/document?version=original|final', 'Descarga el PDF original o el final firmado y sellado.'],
   ['GET', '/envelopes/{id}/attachments/{attachment_id}', 'Descarga un archivo que adjuntó un firmante (la lista viene en "attachments" del sobre).'],
@@ -185,7 +188,10 @@ const ENDPOINTS = [
   ['DELETE', '/webhooks/{id}', 'Elimina un webhook.'],
 ];
 
+const EMBED_DOC = "## Firma embebida (dentro de tu sitio o app)\n\n1. Autorizá tus dominios: PUT /settings/embed-origins con {\"origins\": [\"https://app.tuempresa.com\"]} (o en Panel → API).\n2. Creá el sobre con \"delivery\": \"embedded\". No se envían emails de invitación y la respuesta trae \"signing_urls\": [{ \"recipient_id\", \"url\", \"expires_at\" }] de quienes firman ahora.\n3. Mostrá la firma en tu página:\n   <script src=\"APP_URL/embed.js\" async></script>\n   <docsure-signing src=\"URL\"></docsure-signing>\n   El elemento emite los eventos \"docsure:loaded\", \"docsure:signed\" y \"docsure:declined\".\n4. Para un enlace nuevo (o para el siguiente firmante en orden) llamá POST /envelopes/{id}/recipients/{recipient_id}/signing-url. Cada enlace nuevo invalida el anterior.\nTu aplicación responde por la identidad del firmante (ya lo autenticaste vos): DocSure no pide código por email y lo deja asentado en el certificado de finalización.";
+
 export function llmsTxt(config) {
+  const EMBED_LLMS = EMBED_DOC.replace('APP_URL', config.appUrl);
   const api = `${config.appUrl}/api/v1`;
   const ex = examples(api);
   return `# DocSure
@@ -268,6 +274,8 @@ Las plantillas se crean desde el panel ("Guardar como plantilla" en cualquier so
 
 - POST /envelopes/{id}/correct: anula el sobre en curso (no consume cupo) y devuelve un borrador idéntico; editalo con el panel o envialo con POST /envelopes/{id}/send.
 - POST /envelopes/{id}/extend con {"days": 15}: nuevo vencimiento contado desde hoy.
+
+${EMBED_LLMS}
 
 ## Seguridad para los firmantes
 
@@ -359,6 +367,7 @@ export function openapiSpec(config) {
             language: { type: 'string', enum: ['es', 'en', 'pt'], default: 'es' },
             expire_days: { type: 'integer', minimum: 1, maximum: 120, default: 30 },
             reminder_days: { type: 'integer', enum: [0, 1, 2, 3, 5, 7], default: 0 },
+            delivery: { type: 'string', enum: ['email', 'embedded'], default: 'email', description: 'embedded: sin emails de invitación; la respuesta incluye signing_urls para mostrar la firma en tu sitio.' },
           },
         },
         Envelope: {
@@ -396,6 +405,11 @@ export function openapiSpec(config) {
       '/envelopes/{id}/void': { post: { summary: 'Anular un sobre en curso', security: auth, parameters: [idParam], responses: { 200: envResp, 409: err } } },
       '/envelopes/{id}/recipients/{recipient_id}/resend': { post: { summary: 'Reenviar invitación', security: auth, parameters: [idParam, { name: 'recipient_id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: { description: 'ok' }, 409: err, 429: err } } },
       '/envelopes/{id}/document': { get: { summary: 'Descargar PDF', security: auth, parameters: [idParam, { name: 'version', in: 'query', schema: { type: 'string', enum: ['original', 'final'], default: 'final' } }], responses: { 200: { description: 'PDF', content: { 'application/pdf': {} } }, 404: err } } },
+      '/envelopes/{id}/recipients/{recipient_id}/signing-url': { post: { summary: 'Enlace de firma embebida', security: auth, parameters: [idParam, { name: 'recipient_id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: { description: 'recipient_id, url, expires_at' }, 409: err } } },
+      '/settings/embed-origins': {
+        get: { summary: 'Dominios autorizados para la firma embebida', security: auth, responses: { 200: { description: 'embed_origins' } } },
+        put: { summary: 'Definir dominios autorizados', security: auth, requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['origins'], properties: { origins: { type: 'array', maxItems: 10, items: { type: 'string', format: 'uri' } } } } } } }, responses: { 200: { description: 'embed_origins' }, 400: err } },
+      },
       '/envelopes/{id}/attachments/{attachment_id}': { get: { summary: 'Descargar un adjunto del firmante', security: auth, parameters: [idParam, { name: 'attachment_id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { 200: { description: 'Archivo', content: { 'image/png': {}, 'image/jpeg': {}, 'application/pdf': {} } }, 404: err } } },
       '/envelopes/{id}/correct': { post: { summary: 'Corregir: anula y crea un borrador idéntico', security: auth, parameters: [idParam], responses: { 201: envResp, 409: err } } },
       '/envelopes/{id}/extend': { post: { summary: 'Extender vencimiento', security: auth, parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['days'], properties: { days: { type: 'integer', minimum: 1, maximum: 120 } } } } } }, responses: { 200: envResp, 409: err } } },
@@ -447,7 +461,7 @@ export function developersPage(config, user) {
   <nav class="docs-nav" aria-label="Secciones de la documentación"><ul>
     <li><a href="#ia">Integrar con tu IA</a></li><li><a href="#autenticacion">Autenticación</a></li>
     <li><a href="#enviar">Enviar a firmar</a></li><li><a href="#campos">Campos</a></li>
-    <li><a href="#estado">Estado y descarga</a></li><li><a href="#webhooks">Webhooks</a></li>
+    <li><a href="#estado">Estado y descarga</a></li><li><a href="#embebida">Firma embebida</a></li><li><a href="#webhooks">Webhooks</a></li>
     <li><a href="#errores">Errores y límites</a></li><li><a href="#referencia">Referencia</a></li>
   </ul></nav>
   <div class="docs-body">
@@ -499,6 +513,16 @@ export function developersPage(config, user) {
       <p>Sobre: <code>draft → sent → completed | declined | voided</code>. Destinatario: <code>created → sent → viewed → signed | declined</code>.</p>
       ${code(ex.status)}
       <p>El PDF final incluye las firmas, el certificado de finalización con la auditoría y el sello digital X.509. Cualquiera puede comprobarlo en <a href="/verificar">/verificar</a>.</p>
+    </section>
+    <section id="embebida">
+      <h2>Firma embebida</h2>
+      <p>Mostrá la firma dentro de tu sitio o app, sin que el firmante salga de tu producto.</p>
+      <p>1. Autorizá tus dominios en <a href="/app/api">Panel → API</a> o con <code>PUT /settings/embed-origins</code>.</p>
+      <p>2. Creá el sobre con <code>"delivery": "embedded"</code>: no se envían invitaciones y la respuesta trae <code>signing_urls</code>.</p>
+      <p>3. Agregá el componente:</p>
+      ${code(`<script src="${config.appUrl}/embed.js" async></script>\n<docsure-signing src="URL_DE_SIGNING_URLS"></docsure-signing>\n<script>\n  document.querySelector('docsure-signing')\n    .addEventListener('docsure:signed', () => location.href = '/gracias');\n</script>`)}
+      <p>Eventos: <code>docsure:loaded</code>, <code>docsure:signed</code> y <code>docsure:declined</code>. Para el siguiente firmante o un enlace nuevo: <code>POST /envelopes/{id}/recipients/{recipient_id}/signing-url</code>.</p>
+      <div class="callout">Tu aplicación responde por la identidad del firmante: DocSure no le pide código por email y lo deja asentado en el certificado de finalización.</div>
     </section>
     <section id="webhooks">
       <h2>Webhooks</h2>

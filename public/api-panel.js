@@ -75,3 +75,21 @@ $('hook-form').addEventListener('submit', async (e) => {
 
 copyButtons();
 await Promise.all([loadKeys(), loadHooks()]);
+
+// ---------- Firma embebida: dominios autorizados ----------
+const embedForm = document.getElementById('embed-form');
+const embedMsg = document.getElementById('embed-msg');
+api('/api/ajustes/embebido').then((r) => { document.getElementById('embed-origins').value = r.embed_origins.join('\n'); }).catch(() => {});
+embedForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  embedMsg.className = 'form-error';
+  embedMsg.textContent = '';
+  try {
+    const r = await api('/api/ajustes/embebido', { method: 'PUT', body: { origins: document.getElementById('embed-origins').value } });
+    document.getElementById('embed-origins').value = r.embed_origins.join('\n');
+    embedMsg.className = 'form-ok';
+    embedMsg.textContent = r.embed_origins.length ? 'Dominios guardados.' : 'Sin dominios: la firma no se puede mostrar en un iframe.';
+  } catch (err) {
+    embedMsg.textContent = err.message;
+  }
+});

@@ -248,6 +248,8 @@ const EVENT_LABELS = {
   extended: 'Vencimiento extendido',
   in_person_started: 'Firma en persona iniciada por el remitente',
   in_person_verified: 'Identidad atestiguada en persona',
+  embedded_link: 'Enlace de firma embebida emitido por API',
+  embedded_verified: 'Firma embebida abierta en la aplicación del remitente',
   corrected: 'Sobre corregido',
   document_added: 'Documento agregado',
   document_removed: 'Documento quitado',
@@ -372,7 +374,9 @@ async function addCertificate(pdf, { envelope, owner, recipients, events, siteUr
     const role = r.role === 'cc' ? 'Recibe copia del documento final' : `Firmante (orden ${r.routing_order}) · Firmado`;
     w.text(role, { color: MUTED });
     if (r.role === 'signer') {
-      const method = r.in_person_by
+      const method = envelope.delivery === 'embedded'
+        ? 'firma embebida: identidad garantizada por la aplicación del remitente, autenticada con su clave de API'
+        : r.in_person_by
         ? 'firma en persona en el dispositivo del remitente, con su sesión autenticada'
         : 'código de un solo uso enviado al email';
       w.text(`Verificación de identidad: ${method} · verificado ${fmt(r.verified_at)}`, { color: MUTED, size: 9 });

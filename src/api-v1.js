@@ -1,4 +1,5 @@
 import express from 'express';
+import * as account from './services/account.js';
 import * as keys from './services/apikeys.js';
 import * as attachments from './services/attachments.js';
 import * as contacts from './services/contacts.js';
@@ -70,7 +71,10 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
 
   router.post('/envelopes', asyncRoute(async (req, res) => {
     const out = await env.createFromApi(ctx, req.apiUser, req.body || {}, req.headers['idempotency-key'], clientMeta(req));
-    res.status(out.replay ? 200 : 201).json(out.envelope);
+    const body = out.envelope.delivery === 'embedded' && out.envelope.status === 'sent'
+      ? { ...out.envelope, signing_urls: await env.embeddedSigningUrls(ctx, req.apiUser.id, out.envelope.id) }
+      : out.envelope;
+    res.status(out.replay ? 200 : 201).json(body);
   }));
 
   router.get('/envelopes/:id', asyncRoute(async (req, res) => res.json(await env.apiEnvelope(ctx, req.apiUser.id, req.params.id))));
@@ -87,6 +91,14 @@ export function createApiV1({ ctx, limit, clientMeta, sendPdf }) {
     await env.voidEnvelope(ctx, req.apiUser.id, req.params.id, clientMeta(req));
     res.json(await env.apiEnvelope(ctx, req.apiUser.id, req.params.id));
   }));
+
+  router.post('/envelopes/:id/recipients/:rid/signing-url', asyncRoute(async (req, res) => {
+    limit(`embed-url:${req.apiUser.id}`, 600, 3600_000);
+    res.json(await env.embeddedSigningUrl(ctx, req.apiUser.id, req.params.id, req.params.rid));
+  }));
+
+  router.get('/settings/embed-origins', asyncRoute(async (req, res) => res.json(await account.getEmbedOrigins(ctx, req.apiUser.id))));
+  router.put('/settings/embed-origins', asyncRoute(async (req, res) => res.json(await account.setEmbedOrigins(ctx, req.apiUser.id, req.body?.origins))));
 
   router.post('/envelopes/:id/recipients/:rid/resend', asyncRoute(async (req, res) => {
     res.json(await env.resendInvite(ctx, req.apiUser.id, req.params.id, req.params.rid));
